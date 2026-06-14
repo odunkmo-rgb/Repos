@@ -39,6 +39,8 @@ OPENROUTER_KEY  = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct:free"
 
+TOGETHER_KEY = os.environ.get("TOGETHER_API_KEY", "")
+
 def _ai_providers() -> list[tuple[str, str, str]]:
     """Kullanılabilir (api_key, base_url, model) listesini döndürür — önce Groq, sonra Gemini, sonra OpenRouter."""
     providers = []
@@ -974,22 +976,43 @@ async def _gorsel_url_bul(sorgu: str) -> str | None:
     return await loop.run_in_executor(_thread_pool, _sync)
 
 async def _gorsel_uret(prompt: str) -> bytes | None:
-    """Pollinations.AI ile görsel üretir — ücretsiz, API key gerektirmez."""
-    encoded = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&seed={hash(prompt) % 99999}"
+    """Together.AI FLUX.1-schnell ile görsel üretir."""
+    if not TOGETHER_KEY:
+        logger.error("Görsel üretme: TOGETHER_API_KEY eksik")
+        return None
+    url = "https://api.together.xyz/v1/images/generations"
+    headers = {
+        "Authorization": f"Bearer {TOGETHER_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "black-forest-labs/FLUX.1-schnell-Free",
+        "prompt": prompt,
+        "width": 1024,
+        "height": 1024,
+        "steps": 4,
+        "n": 1,
+        "response_format": "b64_json",
+    }
     try:
+        import base64
         async with aiohttp.ClientSession() as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=60)) as r:
+            async with s.post(
+                url, json=payload, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as r:
                 if r.status != 200:
-                    logger.error(f"Pollinations API hata {r.status}")
+                    hata = await r.text()
+                    logger.error(f"Together image API hata {r.status}: {hata[:300]}")
                     return None
-                data = await r.read()
-                if len(data) < 1000:
-                    logger.error("Pollinations çok küçük yanıt döndü")
-                    return None
-                return data
+                data = await r.json()
+        b64 = data.get("data", [{}])[0].get("b64_json", "")
+        if b64:
+            return base64.b64decode(b64)
+        logger.error(f"Together image: b64_json yok — {str(data)[:200]}")
+        return None
     except Exception as ex:
-        logger.error(f"Pollinations görsel üretme hatası: {ex}")
+        logger.error(f"Together image üretme hatası: {ex}")
         return None
 
 # ── Üye profil özeti (izlenim analizi için) ──────────────────────────────────
