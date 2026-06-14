@@ -57,22 +57,32 @@ AI_SYSTEM_PROMPT = (
     "Sen Mm2 Bot adında Türkçe konuşan bir Discord botusun. "
     "SADECE TÜRKÇE yaz, başka dil kesinlikle yasak.\n"
     "Güncel bilgi için sana '=== WEB ARAMA ===' bölümü verilecek.\n"
-    "### KRİTİK KURALLAR (ihlal edilemez) ###\n"
-    "1. Maç sonucu, skor, goller, kim kazandı, tarih, saat gibi GERÇEK ZAMANLI bilgiler "
-    "YALNIZCA '=== WEB ARAMA ===' bölümünde açıkça yazıyorsa söylenebilir.\n"
-    "2. Web aramada bu bilgi YOKSA veya NET DEĞİLSE: "
-    "'Bu bilgiye ulaşamadım, resmi kaynaklara (TFF, UEFA, sporx.com vb.) bak.' de. "
-    "ASLA tahmin etme, ASLA uydurma, ASLA 'büyük ihtimalle' gibi ifade kullanma.\n"
-    "3. İsim, oyuncu, kulüp gibi spesifik kişi/kurum bilgilerini ASLA tahmin etme. "
-    "Emin değilsen belirtme.\n"
-    "4. Genel kültür soruları için kendi bilgini kullanabilirsin ama spor/borsa/haber "
-    "gibi anlık değişen konularda YALNIZCA web arama sonuçlarına güven.\n"
-    "### DİĞER KURALLAR ###\n"
+
+    "### !!KURAL 0 — KESİN YASAK (asla ihlal etme) ###\n"
+    "Cevabının başında, ortasında veya sonunda ASLA kullanıcı ismi/nicknamei yazma. "
+    "Merhaba, hey, selam gibi hitapların arkasına bile isim ekleme. "
+    "Sistem bağlamında 'Kullanıcı:' satırı yalnızca bilgi içindir, ASLA yanıtta kullanma. "
+    "Doğrudan cevaba gir — tek satır bile olsa isim yok.\n"
+
+    "### KURAL 1 — GERÇEK ZAMANLI VERİ ###\n"
+    "Maç sonucu, skor, gol atan, kim kazandı, puan durumu, güncel haberler gibi "
+    "GERÇEK ZAMANLI bilgileri YALNIZCA '=== WEB ARAMA ===' bölümünde açıkça yazıyorsa ver. "
+    "Web aramada yoksa veya belirsizse şunu de: "
+    "'Bu bilgiye şu an ulaşamadım, sporx.com / TFF / UEFA gibi resmi kaynakları kontrol et.' "
+    "ASLA tahmin etme, ASLA uydurma, ASLA 'büyük ihtimalle' gibi ifade kullanma. "
+    "Web aramada olmayan hiçbir skor, isim, tarih, gol bilgisi SÖYLENEMEZ.\n"
+
+    "### KURAL 2 — SPESIFIK KİŞİ / KURUM BİLGİSİ ###\n"
+    "Oyuncu adı, kulüp, antrenör, transfer gibi spesifik bilgileri ASLA tahmin etme. "
+    "Emin değilsen 'Bunu doğrulayamadım' de.\n"
+
+    "### KURAL 3 — GENEL KÜLTÜR ###\n"
+    "Genel kültür soruları için kendi bilgini kullanabilirsin. "
+    "Spor / borsa / haber / anlık fiyat gibi konularda YALNIZCA web arama sonuçlarına güven.\n"
+
+    "### GENEL ###\n"
     "Cevap uzunluğunu soruyla orantıla. Emoji kullanabilirsin ama abartma. "
-    "Komik durumlarda esprili ol, kaba olma. "
-    "Kullanıcının istediği konuşma tarzını uygula.\n"
-    "ZORUNLU: Kullanıcıya cevap verirken asla ismini kullanma. "
-    "Ne başında ne ortasında ne sonunda isim yazma. Direkt cevaba gir."
+    "Komik durumlarda esprili ol, kaba olma. Kullanıcının istediği konuşma tarzını uygula."
 )
 
 import zoneinfo as _zoneinfo
@@ -969,9 +979,10 @@ async def _doviz_cek() -> str | None:
 # ── Akıllı web arama filtresi ────────────────────────────────────────────────
 def _akilli_filtrele(sonuclar: list[dict], bugun_tr: str) -> str:
     """Sonuçları puanlar: bugünün tarihini / sayısal değerleri / güncel kelimeleri içerenler öne çıkar."""
-    SAYI_RE  = re.compile(r'\d[\d.,]+')
-    PARA_RE  = re.compile(r'(tl|₺|\$|dolar|euro|€|kur|fiyat|puan|skor|gol|maç saati|başlangıç)', re.I)
-    GUNCEL_RE = re.compile(r'(2025|2026|bugün|today|son dakika|güncel|canlı|anlık|şu an)', re.I)
+    SAYI_RE   = re.compile(r'\d[\d.,]+')
+    SPOR_RE   = re.compile(r'(skor|gol|maç|kazandı|yendi|berabere|puan|goller|final|lig|şampiyon)', re.I)
+    PARA_RE   = re.compile(r'(tl|₺|\$|dolar|euro|€|kur|fiyat|başlangıç)', re.I)
+    GUNCEL_RE = re.compile(r'(2025|2026|bugün|today|son dakika|güncel|canlı|anlık|şu an|dün)', re.I)
 
     puanli = []
     for s in sonuclar:
@@ -979,8 +990,9 @@ def _akilli_filtrele(sonuclar: list[dict], bugun_tr: str) -> str:
         govde  = s.get("body", "")
         metin  = f"{baslik}: {govde}"
         puan   = 0
-        if bugun_tr in metin:          puan += 6   # Bugünün tarihi → en yüksek öncelik
-        if GUNCEL_RE.search(metin):    puan += 3
+        if bugun_tr in metin:          puan += 8   # Bugünün tarihi → en yüksek öncelik
+        if GUNCEL_RE.search(metin):    puan += 4
+        if SPOR_RE.search(metin):      puan += 3
         if SAYI_RE.search(metin):      puan += 2
         if PARA_RE.search(metin):      puan += 2
         puanli.append((puan, metin))
@@ -989,12 +1001,17 @@ def _akilli_filtrele(sonuclar: list[dict], bugun_tr: str) -> str:
     return "\n".join(f"• {m}" for _, m in puanli)
 
 # ── Web araması (duckduckgo_search, thread pool) ────────────────────────────
-async def _web_ara(sorgu: str, max_sonuc: int = 8, bugun_tr: str = "") -> str:
+async def _web_ara(sorgu: str, max_sonuc: int = 15, bugun_tr: str = "") -> str:
     def _sync():
         try:
             from ddgs import DDGS
+            # İlk arama: Türkçe
             with DDGS() as d:
                 sonuclar = list(d.text(sorgu, max_results=max_sonuc, region="tr-tr"))
+            # Sonuç azsa İngilizce de dene
+            if len(sonuclar) < 5:
+                with DDGS() as d:
+                    sonuclar += list(d.text(sorgu, max_results=max_sonuc, region="wt-wt"))
             if not sonuclar:
                 return "Arama sonucu bulunamadı."
             return _akilli_filtrele(sonuclar, bugun_tr)
@@ -1002,6 +1019,24 @@ async def _web_ara(sorgu: str, max_sonuc: int = 8, bugun_tr: str = "") -> str:
             return f"Arama başarısız: {ex}"
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_thread_pool, _sync)
+
+# ── İsim temizleyici — AI yanıtı başından kullanıcı adını siler ──────────────
+def _temizle_isim_prefix(yanit: str, kullanici_adi: str, display_adi: str) -> str:
+    """AI cevabı kullanıcı adıyla başlıyorsa o kısmı siler."""
+    if not yanit:
+        return yanit
+    for ad in [kullanici_adi, display_adi]:
+        if not ad:
+            continue
+        # "Vespera, ..." / "Vespera! ..." / "Merhaba Vespera, ..." / "_Vespera, ..."
+        patterns = [
+            rf"^_?{re.escape(ad)}[,!?.:\s]+",        # başta doğrudan isim
+            rf"^[^\w]*{re.escape(ad)}[,!?.:\s]+",    # özel karakter + isim
+            rf"^(merhaba|hey|selam|evet|tamam)[,!]?\s+_?{re.escape(ad)}[,!?.:\s]+",  # hitap + isim
+        ]
+        for pat in patterns:
+            yanit = re.sub(pat, "", yanit, flags=re.IGNORECASE).lstrip()
+    return yanit
 
 # ── Görsel URL arama (duckduckgo_search) ────────────────────────────────────
 async def _gorsel_url_bul(sorgu: str) -> str | None:
@@ -1240,7 +1275,12 @@ async def handle_ai_message(message: discord.Message):
         if doviz_veri:
             sistem += f"\n=== CANLI DÖVİZ ({_tarih_tr}) ===\n{doviz_veri}\n"
         if web_sonucu:
-            sistem += f"\n=== WEB ARAMA ({_tarih_tr}) ===\n{web_sonucu[:1500]}\n"
+            sistem += f"\n=== WEB ARAMA ({_tarih_tr}) ===\n{web_sonucu[:3000]}\n"
+        if not web_sonucu or "bulunamadı" in (web_sonucu or ""):
+            sistem += (
+                "\n[NOT: Web araması sonuç vermedi. Anlık veri gereken konularda "
+                "bilgi verme, 'şu an ulaşamadım' de.]\n"
+            )
         if komut_sorusu:
             sistem += f"\n=== BOT KOMUTLARI ===\n{_BOT_KOMUT_LISTESI}\n"
 
@@ -1284,6 +1324,12 @@ async def handle_ai_message(message: discord.Message):
                 break
 
     if answer:
+        # İsim temizleme — AI yanıtı yanlışlıkla kullanıcı adıyla başlıyorsa sil
+        author = message.author
+        kullanici_adi  = getattr(author, "name", "") or ""
+        display_adi    = getattr(author, "display_name", "") or ""
+        answer = _temizle_isim_prefix(answer, kullanici_adi, display_adi)
+
         # Hafızaya kaydet
         gecmis.append({"role": "user",      "content": kullanici_mesaj[:500]})
         gecmis.append({"role": "assistant",  "content": answer[:500]})
