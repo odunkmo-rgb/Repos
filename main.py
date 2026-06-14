@@ -68,7 +68,9 @@ AI_SYSTEM_PROMPT = (
     "### DİĞER KURALLAR ###\n"
     "Cevap uzunluğunu soruyla orantıla. Emoji kullanabilirsin ama abartma. "
     "Komik durumlarda esprili ol, kaba olma. "
-    "Kullanıcının istediği konuşma tarzını uygula."
+    "Kullanıcının istediği konuşma tarzını uygula.\n"
+    "ZORUNLU: Kullanıcıya cevap verirken asla ismini kullanma. "
+    "Ne başında ne ortasında ne sonunda isim yazma. Direkt cevaba gir."
 )
 
 import zoneinfo as _zoneinfo
@@ -867,13 +869,18 @@ _GORSEL_KELIMELERI = [
 ]
 
 _GORSEL_URET_KELIMELERI = [
+    # Türkçe kök + ekli formlar
     "resim yap", "resim çiz", "resim oluştur", "resim üret",
+    "resmi yap", "resmi çiz", "resmi oluştur", "resmi üret",
+    "resmini yap", "resmini çiz",
     "görsel yap", "görsel çiz", "görsel oluştur", "görsel üret",
+    "görseli yap", "görseli çiz", "görseli oluştur",
     "fotoğraf oluştur", "fotoğraf çek", "fotoğraf yap",
-    "çiz bana", "bana çiz", "çizim yap", "illüstrasyon",
-    "image generate", "generate image", "draw", "imagine",
-    "oluştur resim", "üret resim", "ai resim", "yapay zeka resim",
-    "bana resim", "bana görsel",
+    "fotoğrafını çek", "fotoğrafını yap",
+    "çiz bana", "bana çiz", "bana resim", "bana görsel",
+    "çizim yap", "illüstrasyon", "illüstrasyon yap",
+    "ai resim", "yapay zeka resim", "yapay zeka ile çiz",
+    "image generate", "generate image", "draw me", "imagine",
 ]
 
 _DOVIZ_KELIMELERI = [
@@ -966,45 +973,23 @@ async def _gorsel_url_bul(sorgu: str) -> str | None:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_thread_pool, _sync)
 
-async def _gorsel_uret_gemini(prompt: str) -> bytes | None:
-    """Gemini Imagen 3 ile görsel üretir. Başarılı olursa PNG bytes döndürür."""
-    if not GEMINI_KEY:
-        return None
-    import base64
-    # Türkçe promptu İngilizce'ye çevirmeden direkt gönder
-    # Gemini'nin Türkçe promptu desteklediği modeli kullan
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"imagen-3.0-generate-002:predict?key={GEMINI_KEY}"
-    )
-    payload = {
-        "instances": [{"prompt": prompt}],
-        "parameters": {
-            "sampleCount": 1,
-            "aspectRatio": "1:1",
-            "safetyFilterLevel": "block_only_high",
-        }
-    }
+async def _gorsel_uret(prompt: str) -> bytes | None:
+    """Pollinations.AI ile görsel üretir — ücretsiz, API key gerektirmez."""
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&seed={hash(prompt) % 99999}"
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.post(
-                url, json=payload,
-                timeout=aiohttp.ClientTimeout(total=45)
-            ) as r:
+            async with s.get(url, timeout=aiohttp.ClientTimeout(total=60)) as r:
                 if r.status != 200:
-                    hata = await r.text()
-                    logger.error(f"Imagen API hata {r.status}: {hata[:200]}")
+                    logger.error(f"Pollinations API hata {r.status}")
                     return None
-                data = await r.json()
-        predictions = data.get("predictions", [])
-        if not predictions:
-            return None
-        b64 = predictions[0].get("bytesBase64Encoded", "")
-        if not b64:
-            return None
-        return base64.b64decode(b64)
+                data = await r.read()
+                if len(data) < 1000:
+                    logger.error("Pollinations çok küçük yanıt döndü")
+                    return None
+                return data
     except Exception as ex:
-        logger.error(f"Imagen görsel üretme hatası: {ex}")
+        logger.error(f"Pollinations görsel üretme hatası: {ex}")
         return None
 
 # ── Üye profil özeti (izlenim analizi için) ──────────────────────────────────
@@ -1195,21 +1180,23 @@ async def handle_ai_message(message: discord.Message):
 
     from openai import AsyncOpenAI
 
-    # Görsel üretme isteği — direkt Gemini Imagen ile üret, AI chat atla
-    if gorsel_uretme_gerekli and GEMINI_KEY:
-        async with message.channel.typing():
-            temiz_sorgu = re.sub(r"<@!?\d+>", "", message.content).strip()
-            await message.reply("🎨 Görsel üretiliyor, birkaç saniye bekle...")
-            gorsel_bytes = await _gorsel_uret_gemini(temiz_sorgu)
-            if gorsel_bytes:
-                import io
-                dosya = discord.File(io.BytesIO(gorsel_bytes), filename="gorsel.png")
-                await message.channel.send(file=dosya)
-            else:
-                await message.reply(
-                    "❌ Görsel üretilemedi. Prompt çok kısa olabilir ya da içerik politikasına "
-                    "takılmış olabilir. Daha açıklayıcı bir şey dene."
-                )
+    # Görsel üretme isteği — Pollinations.AI ile üret, AI chat atla
+    if gorsel_uretme_gerekli:
+        temiz_sorgu = re.sub(r"<@!?\d+>", "", message.content).strip()
+        bekle_msg = await message.reply("🎨 Görsel üretiliyor, biraz bekle...")
+        gorsel_bytes = await _gorsel_uret(temiz_sorgu)
+        try:
+            await bekle_msg.delete()
+        except Exception:
+            pass
+        if gorsel_bytes:
+            import io
+            dosya = discord.File(io.BytesIO(gorsel_bytes), filename="gorsel.png")
+            await message.channel.send(file=dosya)
+        else:
+            await message.reply(
+                "❌ Görsel üretilemedi. Biraz sonra tekrar dene veya promptu değiştir."
+            )
         return
 
     # Web & görsel & döviz aramayı paralel yap
