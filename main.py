@@ -485,6 +485,29 @@ def _format_options(data: dict) -> str:
             parts.append(f"{opt.get('name', '')}:{opt.get('value', '')}")
     return " ".join(parts)
 
+# ── Komut → okunabilir eylem açıklaması eşlemesi ─────────────────────────────
+_KOMUT_ACIKLAMALARI: dict[str, str] = {
+    "hesap-bağla":                  "Roblox hesabını Discord'a bağlamak için talep oluşturuldu",
+    "hesap-görüntüle":              "Bağlı Roblox profili görüntülendi",
+    "hesap-sil":                    "Roblox hesap bağlantısı silindi",
+    "hesap-bilgi":                  "Sunucudaki bağlı / bağlı olmayan üyeler listelendi",
+    "roblox-arat":                  "Roblox kullanıcı araması yapıldı",
+    "eşya-ekle":                    "Envantere yeni eşya ekleme talebi oluşturuldu",
+    "envanter-görüntüle":           "MM2 envanteri görüntülendi",
+    "envanter-sil":                 "Envanterden eşya silme işlemi yapıldı",
+    "değer":                        "MM2 eşya değeri sorgulandı",
+    "yapay-zeka-kur":               "Yapay zeka sohbet kanalı kuruldu",
+    "özel-mesaj":                   "Üyelere özel mesaj (DM) gönderildi",
+    "yardım":                       "Yardım menüsü görüntülendi",
+    "sunucular":                    "Botun bulunduğu sunucu listesi görüntülendi",
+    "durum":                        "Botun durumu / aktivitesi güncellendi",
+    "durum-döngü":                  "Dönen durum mesajları kuruldu / düzenlendi",
+    "komut-kullanmayan-görüntüle":  "Komut kullanmayan üyeler listelendi",
+    "komut-kullandırt":             "Pasif üyelere DM gönderildi",
+    "yetkili-kanal":                "Yetkili log kanalı ayarlandı",
+    "yetkili-rol":                  "Yetkili rolü ayarlandı",
+}
+
 async def send_interaction_log(interaction: discord.Interaction, tip: str, channel_id: int):
     try:
         channel = bot.get_channel(channel_id)
@@ -495,7 +518,10 @@ async def send_interaction_log(interaction: discord.Interaction, tip: str, chann
         data = interaction.data or {}
         cmd_name = data.get("name", "")
         full_cmd = f"/{cmd_name} {_format_options(data)}".strip() if cmd_name else "?"
+
         title_map = {"slash": "🔧 Slash Komut", "modal": "📋 Modal", "button": "🔘 Buton"}
+        aciklama = _KOMUT_ACIKLAMALARI.get(cmd_name, "")
+
         embed = discord.Embed(
             title=title_map.get(tip, tip),
             description=(
@@ -510,6 +536,18 @@ async def send_interaction_log(interaction: discord.Interaction, tip: str, chann
             embed.set_thumbnail(url=icon_url)
         if cmd_name:
             embed.add_field(name="Komut", value=f"`{full_cmd}`", inline=False)
+        if aciklama:
+            embed.add_field(name="📌 Yapılan İşlem", value=aciklama, inline=False)
+        # Modal için custom_id'den bağlam çıkar
+        if tip == "modal":
+            modal_id = data.get("custom_id", "")
+            if modal_id:
+                embed.add_field(name="Modal ID", value=f"`{modal_id}`", inline=True)
+        # Buton için custom_id'den bağlam çıkar
+        if tip == "button":
+            btn_id = data.get("custom_id", "")
+            if btn_id:
+                embed.add_field(name="Buton", value=f"`{btn_id}`", inline=True)
         await channel.send(embed=embed)
     except Exception as ex:
         logger.error(f"Log gönderilemedi: {ex}")
@@ -805,8 +843,15 @@ async def sahip_yardim(ctx):
 
 @bot.event
 async def on_message(message: discord.Message):
-    if message.author.bot or not message.guild:
+    if message.author.bot:
         return
+
+    # ── DM'de gelen mesajlar → doğrudan AI sohbet ─────────────────────────
+    if not message.guild:
+        if message.content.strip():
+            await handle_ai_message(message)
+        return
+
     # Sahip prefix komutları (!, her kanaldan) — AI kanalından önce kontrol et
     if message.author.id == OWNER_ID and message.content.startswith("!"):
         await bot.process_commands(message)
@@ -975,45 +1020,6 @@ async def _gorsel_url_bul(sorgu: str) -> str | None:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_thread_pool, _sync)
 
-async def _gorsel_uret(prompt: str) -> bytes | None:
-    """Together.AI FLUX.1-schnell ile görsel üretir."""
-    if not TOGETHER_KEY:
-        logger.error("Görsel üretme: TOGETHER_API_KEY eksik")
-        return None
-    url = "https://api.together.xyz/v1/images/generations"
-    headers = {
-        "Authorization": f"Bearer {TOGETHER_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": "black-forest-labs/FLUX.1-schnell-Free",
-        "prompt": prompt,
-        "width": 1024,
-        "height": 1024,
-        "steps": 4,
-        "n": 1,
-        "response_format": "b64_json",
-    }
-    try:
-        import base64
-        async with aiohttp.ClientSession() as s:
-            async with s.post(
-                url, json=payload, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as r:
-                if r.status != 200:
-                    hata = await r.text()
-                    logger.error(f"Together image API hata {r.status}: {hata[:300]}")
-                    return None
-                data = await r.json()
-        b64 = data.get("data", [{}])[0].get("b64_json", "")
-        if b64:
-            return base64.b64decode(b64)
-        logger.error(f"Together image: b64_json yok — {str(data)[:200]}")
-        return None
-    except Exception as ex:
-        logger.error(f"Together image üretme hatası: {ex}")
-        return None
 
 # ── Üye profil özeti (izlenim analizi için) ──────────────────────────────────
 def _uye_profil_ozeti(uye: discord.Member) -> str:
@@ -1147,7 +1153,8 @@ async def handle_ai_message(message: discord.Message):
         logger.warning("AI: Hiçbir API anahtarı yok.")
         return
 
-    guild_id = message.guild.id
+    # DM'de guild_id = 0 olarak kullan
+    guild_id = message.guild.id if message.guild else 0
     user_id  = message.author.id
     metin_lower = message.content.lower()
 
@@ -1203,23 +1210,12 @@ async def handle_ai_message(message: discord.Message):
 
     from openai import AsyncOpenAI
 
-    # Görsel üretme isteği — Pollinations.AI ile üret, AI chat atla
+    # Görsel üretme isteği — desteklenmiyor, bilgi ver
     if gorsel_uretme_gerekli:
-        temiz_sorgu = re.sub(r"<@!?\d+>", "", message.content).strip()
-        bekle_msg = await message.reply("🎨 Görsel üretiliyor, biraz bekle...")
-        gorsel_bytes = await _gorsel_uret(temiz_sorgu)
-        try:
-            await bekle_msg.delete()
-        except Exception:
-            pass
-        if gorsel_bytes:
-            import io
-            dosya = discord.File(io.BytesIO(gorsel_bytes), filename="gorsel.png")
-            await message.channel.send(file=dosya)
-        else:
-            await message.reply(
-                "❌ Görsel üretilemedi. Biraz sonra tekrar dene veya promptu değiştir."
-            )
+        await message.reply(
+            "🤖 Resim oluşturma özelliğim şu an aktif değil. "
+            "Ama seninle sohbet edebilirim — soru sor, bilgi al, eğlen! 😊"
+        )
         return
 
     # Web & görsel & döviz aramayı paralel yap
@@ -2328,24 +2324,41 @@ async def yapay_zeka_kur(interaction: discord.Interaction, kanal: discord.TextCh
     await interaction.response.send_message(embed=embed)
 
 # /özel-mesaj
-@tree.command(name="özel-mesaj", description="DM gönderir.")
-@app_commands.describe(mesaj="Gönderilecek mesaj",
-                       hedef_rol="Mesaj gönderilecek rol",
-                       hedef_kullanici="Mesaj gönderilecek kullanıcı",
-                       gizli_gonder="Göndereni gizle")
+@tree.command(name="özel-mesaj", description="Üyelere DM gönderir.")
+@app_commands.describe(
+    mesaj="Gönderilecek mesaj",
+    kapsam="Kime gönderilecek: Sunucu (bu sunucu) veya Genel (tüm sunucular — sadece sahip)",
+    hedef_rol="Belirli bir role gönder (kapsam Sunucu'da geçerli)",
+    hedef_kullanici="Belirli bir kullanıcıya gönder",
+    gizli_gonder="Göndereni gizle",
+)
+@app_commands.choices(kapsam=[
+    app_commands.Choice(name="Sunucu", value="sunucu"),
+    app_commands.Choice(name="Genel (tüm sunucular)", value="genel"),
+])
 @app_commands.default_permissions(manage_guild=True)
-async def ozel_mesaj(interaction: discord.Interaction, mesaj: str,
-                     hedef_rol: discord.Role = None,
-                     hedef_kullanici: discord.Member = None,
-                     gizli_gonder: bool = False):
+async def ozel_mesaj(
+    interaction: discord.Interaction,
+    mesaj: str,
+    kapsam: app_commands.Choice[str] = None,
+    hedef_rol: discord.Role = None,
+    hedef_kullanici: discord.Member = None,
+    gizli_gonder: bool = False,
+):
     await interaction.response.defer(ephemeral=True)
     await log_usage(interaction, "özel-mesaj")
     if not await is_yetkili(interaction):
         stats_add(interaction, success=False, unauth=True)
         return await interaction.followup.send("❌ Yetkiniz yok.", ephemeral=True)
-    if not hedef_rol and not hedef_kullanici and interaction.user.id != OWNER_ID:
+
+    kapsam_val = kapsam.value if kapsam else "sunucu"
+
+    # Genel kapsam sadece bot sahibine açık
+    if kapsam_val == "genel" and interaction.user.id != OWNER_ID:
+        stats_add(interaction, success=False, unauth=True)
         return await interaction.followup.send(
-            "❌ Genel mesaj gönderme sadece bot sahibine aittir.", ephemeral=True)
+            "❌ **Genel** kapsam yalnızca bot sahibi tarafından kullanılabilir.", ephemeral=True)
+
     embed = discord.Embed(
         title=f"📩 {interaction.guild.name if interaction.guild else 'Mesaj'}",
         description=f">>> {mesaj}",
@@ -2360,13 +2373,23 @@ async def ozel_mesaj(interaction: discord.Interaction, mesaj: str,
                          icon_url=interaction.user.display_avatar.url)
     else:
         embed.set_footer(text="Resmi Sunucu Mesajı")
-    hedefler = []
+
+    hedefler: list[discord.Member] = []
     if hedef_kullanici:
         hedefler = [hedef_kullanici]
     elif hedef_rol:
         hedefler = [m for m in hedef_rol.members if not m.bot]
+    elif kapsam_val == "genel":
+        # Tüm sunuculardaki benzersiz üyeler
+        seen: set[int] = set()
+        for guild in bot.guilds:
+            for m in guild.members:
+                if not m.bot and m.id not in seen:
+                    hedefler.append(m)
+                    seen.add(m.id)
     elif interaction.guild:
         hedefler = [m for m in interaction.guild.members if not m.bot]
+
     gonderilen = 0
     for member in hedefler:
         try:
@@ -2376,7 +2399,9 @@ async def ozel_mesaj(interaction: discord.Interaction, mesaj: str,
         except discord.HTTPException:
             pass
     stats_add(interaction)
-    await interaction.followup.send(f"✅ `{gonderilen}` kişiye mesaj gönderildi.", ephemeral=True)
+    kapsam_etiket = "tüm sunuculara" if kapsam_val == "genel" else "sunucuya"
+    await interaction.followup.send(
+        f"✅ {kapsam_etiket} `{gonderilen}` kişiye mesaj gönderildi.", ephemeral=True)
 
 # /komut-kullanmayan-görüntüle
 @tree.command(name="komut-kullanmayan-görüntüle",
