@@ -55,9 +55,17 @@ AI_SYSTEM_PROMPT = (
     "Sen Mm2 Bot adında Türkçe konuşan bir Discord botusun. "
     "SADECE TÜRKÇE yaz, başka dil kesinlikle yasak.\n"
     "Güncel bilgi için sana '=== WEB ARAMA ===' bölümü verilecek.\n"
-    "KURAL: Saat, tarih, skor, fiyat gibi spesifik veriler YALNIZCA web arama sonuçlarından "
-    "geliyorsa yaz. Arama sonucunda yoksa kesinlikle uydurma — "
-    "'Bu bilgiye ulaşamadım, resmi kaynaklara bak.' de.\n"
+    "### KRİTİK KURALLAR (ihlal edilemez) ###\n"
+    "1. Maç sonucu, skor, goller, kim kazandı, tarih, saat gibi GERÇEK ZAMANLI bilgiler "
+    "YALNIZCA '=== WEB ARAMA ===' bölümünde açıkça yazıyorsa söylenebilir.\n"
+    "2. Web aramada bu bilgi YOKSA veya NET DEĞİLSE: "
+    "'Bu bilgiye ulaşamadım, resmi kaynaklara (TFF, UEFA, sporx.com vb.) bak.' de. "
+    "ASLA tahmin etme, ASLA uydurma, ASLA 'büyük ihtimalle' gibi ifade kullanma.\n"
+    "3. İsim, oyuncu, kulüp gibi spesifik kişi/kurum bilgilerini ASLA tahmin etme. "
+    "Emin değilsen belirtme.\n"
+    "4. Genel kültür soruları için kendi bilgini kullanabilirsin ama spor/borsa/haber "
+    "gibi anlık değişen konularda YALNIZCA web arama sonuçlarına güven.\n"
+    "### DİĞER KURALLAR ###\n"
     "Cevap uzunluğunu soruyla orantıla. Emoji kullanabilirsin ama abartma. "
     "Komik durumlarda esprili ol, kaba olma. "
     "Kullanıcının istediği konuşma tarzını uygula."
@@ -858,6 +866,16 @@ _GORSEL_KELIMELERI = [
     "tablo", "grafik", "harita", "kadro", "forma", "görüntü",
 ]
 
+_GORSEL_URET_KELIMELERI = [
+    "resim yap", "resim çiz", "resim oluştur", "resim üret",
+    "görsel yap", "görsel çiz", "görsel oluştur", "görsel üret",
+    "fotoğraf oluştur", "fotoğraf çek", "fotoğraf yap",
+    "çiz bana", "bana çiz", "çizim yap", "illüstrasyon",
+    "image generate", "generate image", "draw", "imagine",
+    "oluştur resim", "üret resim", "ai resim", "yapay zeka resim",
+    "bana resim", "bana görsel",
+]
+
 _DOVIZ_KELIMELERI = [
     "dolar", "euro", "sterlin", "frank", "döviz", "kur", "kaç tl",
     "kaç para", "altın", "gram altın", "çeyrek altın", "yarım altın", "ons",
@@ -947,6 +965,47 @@ async def _gorsel_url_bul(sorgu: str) -> str | None:
         return None
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_thread_pool, _sync)
+
+async def _gorsel_uret_gemini(prompt: str) -> bytes | None:
+    """Gemini Imagen 3 ile görsel üretir. Başarılı olursa PNG bytes döndürür."""
+    if not GEMINI_KEY:
+        return None
+    import base64
+    # Türkçe promptu İngilizce'ye çevirmeden direkt gönder
+    # Gemini'nin Türkçe promptu desteklediği modeli kullan
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"imagen-3.0-generate-002:predict?key={GEMINI_KEY}"
+    )
+    payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": {
+            "sampleCount": 1,
+            "aspectRatio": "1:1",
+            "safetyFilterLevel": "block_only_high",
+        }
+    }
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.post(
+                url, json=payload,
+                timeout=aiohttp.ClientTimeout(total=45)
+            ) as r:
+                if r.status != 200:
+                    hata = await r.text()
+                    logger.error(f"Imagen API hata {r.status}: {hata[:200]}")
+                    return None
+                data = await r.json()
+        predictions = data.get("predictions", [])
+        if not predictions:
+            return None
+        b64 = predictions[0].get("bytesBase64Encoded", "")
+        if not b64:
+            return None
+        return base64.b64decode(b64)
+    except Exception as ex:
+        logger.error(f"Imagen görsel üretme hatası: {ex}")
+        return None
 
 # ── Üye profil özeti (izlenim analizi için) ──────────────────────────────────
 def _uye_profil_ozeti(uye: discord.Member) -> str:
@@ -1128,10 +1187,30 @@ async def handle_ai_message(message: discord.Message):
     # ── Görsel arama gerekiyor mu? ─────────────────────────────────────────
     gorsel_gerekli = any(k in metin_lower for k in _GORSEL_KELIMELERI)
 
+    # ── Görsel ÜRETME gerekiyor mu? ────────────────────────────────────────
+    gorsel_uretme_gerekli = any(k in metin_lower for k in _GORSEL_URET_KELIMELERI)
+
     # ── Döviz sorgusu mu? ──────────────────────────────────────────────────
     doviz_gerekli = any(k in metin_lower for k in _DOVIZ_KELIMELERI)
 
     from openai import AsyncOpenAI
+
+    # Görsel üretme isteği — direkt Gemini Imagen ile üret, AI chat atla
+    if gorsel_uretme_gerekli and GEMINI_KEY:
+        async with message.channel.typing():
+            temiz_sorgu = re.sub(r"<@!?\d+>", "", message.content).strip()
+            await message.reply("🎨 Görsel üretiliyor, birkaç saniye bekle...")
+            gorsel_bytes = await _gorsel_uret_gemini(temiz_sorgu)
+            if gorsel_bytes:
+                import io
+                dosya = discord.File(io.BytesIO(gorsel_bytes), filename="gorsel.png")
+                await message.channel.send(file=dosya)
+            else:
+                await message.reply(
+                    "❌ Görsel üretilemedi. Prompt çok kısa olabilir ya da içerik politikasına "
+                    "takılmış olabilir. Daha açıklayıcı bir şey dene."
+                )
+        return
 
     # Web & görsel & döviz aramayı paralel yap
     async with message.channel.typing():
