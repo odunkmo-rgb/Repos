@@ -873,6 +873,12 @@ async def on_ready():
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     await set_default_status()
+    try:
+        tree.copy_global_to(guild=guild)
+        await tree.sync(guild=guild)
+        logger.info(f"Komutlar senkronize edildi: {guild.name}")
+    except Exception as ex:
+        logger.warning(f"Guild sync hatası ({guild.name}): {ex}")
 
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
@@ -1567,17 +1573,14 @@ async def handle_ai_message(message: discord.Message):
         gecmis.append({"role": "user",      "content": kullanici_mesaj[:500]})
         gecmis.append({"role": "assistant",  "content": answer[:500]})
         await _set_hafiza_db(guild_id, user_id, gecmis)
+        # Görsel URL varsa cevabın sonuna ekle (ayrı mesaj göndermek yerine)
+        if gorsel_url:
+            answer = answer.rstrip() + f"\n{gorsel_url}"
         # Cevabı gönder (uzunsa böl)
         for i in range(0, len(answer), 1990):
             await message.reply(answer[i:i + 1990])
             if i == 0 and len(answer) > 1990:
                 await asyncio.sleep(0.5)
-        # Görsel gönder
-        if gorsel_url:
-            try:
-                await message.channel.send(gorsel_url)
-            except Exception:
-                pass
     elif son_hata:
         logger.error(f"AI tüm provider'lar başarısız: {son_hata}")
         hata_str = str(son_hata).lower()
