@@ -175,6 +175,7 @@ _son_durum_tip:   str = ""          # /durum ile ayarlanan son tip
 MAX_AI_HAFIZA = 20
 AI_COOLDOWN_SN = 15  # kullanıcı başına saniye cinsinden bekleme süresi
 _ai_son_istek: dict[tuple[int, int], float] = {}  # (guild_id, user_id) → timestamp
+_ai_isleniyor: set[int] = set()  # mesaj ID'si → çift işlemi engeller
 
 def stats_add(interaction: discord.Interaction, success: bool = True,
               error: bool = False, unauth: bool = False):
@@ -1349,6 +1350,16 @@ async def _sil_hafiza_db(guild_id: int, user_id: int | None = None):
 
 # ── Ana AI mesaj işleyici ────────────────────────────────────────────────────
 async def handle_ai_message(message: discord.Message):
+    # Aynı mesaj zaten işleniyorsa ikinci çağrıyı reddet
+    if message.id in _ai_isleniyor:
+        return
+    _ai_isleniyor.add(message.id)
+    try:
+        await _handle_ai_message_inner(message)
+    finally:
+        _ai_isleniyor.discard(message.id)
+
+async def _handle_ai_message_inner(message: discord.Message):
     # Provider listesini al
     providers = _ai_providers()
     if not providers:
