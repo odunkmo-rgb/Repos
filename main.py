@@ -153,12 +153,29 @@ def _ai_sistem_prompt_olustur(profil_bilgisi: str, stil: str | None = None) -> s
 
 # ─── EMOJİ ────────────────────────────────────────────────────────────────────
 EMOJI_SLOTS: dict[str, str] = {
-    "ara": "🔍", "bagla": "🔗", "envanter": "🎒", "onay": "✅",
-    "hata": "❌", "kullanici": "👤", "duyuru": "📢", "istatistik": "📊",
-    "guncelle": "🔄", "elmas": "💎", "sunucu": "🌐", "bekle": "⏳",
-    "liste": "📋", "ekle": "➕", "ayarlar": "⚙️", "mesaj": "📨",
-    "kalkan": "🛡️", "takvim": "📅", "kilit": "🔒", "yildiz": "⭐",
-    "roblox": "🎮", "bilgi": "ℹ️", "robot": "🤖",
+    "ara":        "<:1383042507851563120:1516117180125810799>",
+    "bagla":      "<:866146chain:1516115653961187638>",
+    "envanter":   "<a:warehouse:1516115649284542546>",
+    "onay":       "<a:44748faceidsuccess:1516115632024846498>",
+    "hata":       "<:1391938693782175795:1516117082281082982>",
+    "kullanici":  "<:47757blackuserids:1516115625020227594>",
+    "duyuru":     "<a:4694announces:1516115622294196405>",
+    "istatistik": "<:9230stats1:1516115612294709288>",
+    "guncelle":   "<a:730862lding:1516115585753284730>",
+    "elmas":      "<a:50534diamond:1516115605508460655>",
+    "sunucu":     "<a:database:1516115596360679564>",
+    "bekle":      "<a:Yukleniyor:1449326839632756749>",
+    "liste":      "<a:clipboard:1516115582276337754>",
+    "ekle":       "<:1482446572393599067:1516117140606947528>",
+    "ayarlar":    "<a:555931settings:1516115539208962240>",
+    "mesaj":      "<a:mailing:1516115535581155368>",
+    "kalkan":     "<:45636security:1516115523383988304>",
+    "takvim":     "<a:99609calendar:1516115520447975484>",
+    "kilit":      "<a:shield:1516115507277857011>",
+    "yildiz":     "<a:favourite:1516115328625807510>",
+    "roblox":     "<:858657robloxbluelogo:1516115220890914836>",
+    "bilgi":      "<:66880info:1516115211566972980>",
+    "robot":      "<:884541robotsmiling:1516115204868542554>",
 }
 def e(slot: str) -> str:
     return EMOJI_SLOTS.get(slot, "")
