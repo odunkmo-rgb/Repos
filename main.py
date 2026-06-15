@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiosqlite
+from dbutil import db_connect
 import aiohttp
 import asyncio
 import os
@@ -164,7 +165,7 @@ EMOJI_SLOTS: dict[str, str] = {
     "guncelle":   "<a:730862lding:1516115585753284730>",
     "elmas":      "<a:50534diamond:1516115605508460655>",
     "sunucu":     "<a:database:1516115596360679564>",
-    "bekle":      "<a:Yukleniyor:1449326839632756749>",
+    "bekle":      "<a:730862lding:1516115585753284730>",
     "liste":      "<a:clipboard:1516115582276337754>",
     "ekle":       "<:1482446572393599067:1516117140606947528>",
     "ayarlar":    "<a:555931settings:1516115539208962240>",
@@ -247,11 +248,16 @@ intents.members = True
 intents.message_content = True
 
 class MmCommandTree(app_commands.CommandTree):
-    """Yapay zeka kanalında slash komutlarını engeller."""
+    """Yapay zeka kanalında slash komutlarını engeller (ai-sıfırla hariç)."""
+    _AI_KANAL_IZINLI = {"ai-sıfırla", "ai-sifirla"}
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.guild and interaction.channel_id:
             ai_ch_id = await get_ai_kanal(interaction.guild_id)
             if ai_ch_id and interaction.channel_id == ai_ch_id:
+                cmd_name = (interaction.data or {}).get("name", "")
+                if cmd_name in self._AI_KANAL_IZINLI:
+                    return True
                 await interaction.response.send_message(
                     "❌ Bu kanal yapay zeka sohbet kanalıdır, komutlar burada kullanılamaz.",
                     ephemeral=True,
@@ -264,7 +270,7 @@ tree = bot.tree
 
 # ─── DATABASE ─────────────────────────────────────────────────────────────────
 async def init_db():
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.executescript("""
             CREATE TABLE IF NOT EXISTS settings (
                 guild_id INTEGER PRIMARY KEY,
@@ -353,21 +359,21 @@ async def init_db():
                 pass
 
 async def log_usage(interaction: discord.Interaction, komut: str):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "INSERT INTO kullanim_log (user_id, guild_id, komut) VALUES (?, ?, ?)",
             (interaction.user.id, interaction.guild_id, komut))
         await db.commit()
 
 async def log_error(interaction: discord.Interaction, komut: str, hata: str):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "INSERT INTO hata_log (user_id, guild_id, komut, hata) VALUES (?, ?, ?, ?)",
             (interaction.user.id, interaction.guild_id, komut, hata))
         await db.commit()
 
 async def get_yetkili_roller(guild_id: int) -> list[int]:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT yetkili_rol_id FROM settings WHERE guild_id = ?", (guild_id,)
         ) as cur:
@@ -388,7 +394,7 @@ async def is_yetkili(interaction: discord.Interaction) -> bool:
     return bool(user_rol_ids & set(roller))
 
 async def get_log_kanal(guild_id: int) -> int | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT log_channel_id FROM settings WHERE guild_id = ?", (guild_id,)
         ) as cur:
@@ -405,7 +411,7 @@ async def check_log_kanal(interaction: discord.Interaction) -> int | None:
     return ch_id
 
 async def get_ai_kanal(guild_id: int) -> int | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT ai_channel_id FROM settings WHERE guild_id = ?", (guild_id,)
         ) as cur:
@@ -827,7 +833,7 @@ async def gunluk_guncelleme():
     eklenenler:  list[str] = []
     degisimler:  list[str] = []
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute("SELECT esya_adi, deger_values, kaynak FROM degerler_cache") as cur:
             eski = {row[0].lower(): {"deger": row[1], "kaynak": row[2]} async for row in cur}
 
@@ -924,7 +930,7 @@ async def gunluk_guncelleme():
 
 # ─── BOT AYARLARI DB ──────────────────────────────────────────────────────────
 async def _bot_ayar_al(anahtar: str) -> str | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT deger FROM bot_ayarlari WHERE anahtar = ?", (anahtar,)
         ) as cur:
@@ -932,7 +938,7 @@ async def _bot_ayar_al(anahtar: str) -> str | None:
     return row[0] if row else None
 
 async def _bot_ayar_kaydet(anahtar: str, deger: str):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "INSERT OR REPLACE INTO bot_ayarlari (anahtar, deger) VALUES (?, ?)",
             (anahtar, deger)
@@ -940,14 +946,14 @@ async def _bot_ayar_kaydet(anahtar: str, deger: str):
         await db.commit()
 
 async def _bot_ayar_sil(anahtar: str):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute("DELETE FROM bot_ayarlari WHERE anahtar = ?", (anahtar,))
         await db.commit()
 
 # ─── KULLANICI TERCİHLERİ ─────────────────────────────────────────────────────
 async def _tercih_al(user_id: int, anahtar: str, varsayilan: int = 1) -> int:
     """Kullanıcı tercihini döndürür. Kayıt yoksa varsayılan değer (1=açık) döner."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT deger FROM kullanici_tercihler WHERE discord_id = ? AND anahtar = ?",
             (user_id, anahtar)
@@ -956,7 +962,7 @@ async def _tercih_al(user_id: int, anahtar: str, varsayilan: int = 1) -> int:
     return row[0] if row else varsayilan
 
 async def _tercih_kaydet(user_id: int, anahtar: str, deger: int):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "INSERT OR REPLACE INTO kullanici_tercihler (discord_id, anahtar, deger) VALUES (?, ?, ?)",
             (user_id, anahtar, deger)
@@ -1424,7 +1430,7 @@ def _ai_kullanici_profili(message: discord.Message) -> str:
 # ── AI stil DB işlemleri ─────────────────────────────────────────────────────
 async def _get_ai_stil(guild_id: int, user_id: int) -> tuple[str | None, bool]:
     """(stil, bekliyor) döndürür."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT stil, bekliyor FROM ai_kullanici_stil WHERE guild_id=? AND user_id=?",
             (guild_id, user_id)
@@ -1435,7 +1441,7 @@ async def _get_ai_stil(guild_id: int, user_id: int) -> tuple[str | None, bool]:
     return row[0], bool(row[1])
 
 async def _set_ai_stil(guild_id: int, user_id: int, stil: str | None, bekliyor: bool):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             """INSERT INTO ai_kullanici_stil (guild_id, user_id, stil, bekliyor)
                VALUES (?,?,?,?)
@@ -1450,7 +1456,7 @@ import json as _json
 
 async def _get_hafiza_db(guild_id: int, user_id: int) -> list[dict]:
     """Kullanıcının konuşma geçmişini DB'den döndürür."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT mesajlar FROM ai_hafiza WHERE guild_id=? AND user_id=?",
             (guild_id, user_id)
@@ -1466,7 +1472,7 @@ async def _get_hafiza_db(guild_id: int, user_id: int) -> list[dict]:
 async def _set_hafiza_db(guild_id: int, user_id: int, mesajlar: list[dict]):
     """Konuşma geçmişini DB'ye kaydeder (son MAX_AI_HAFIZA mesaj)."""
     veri = _json.dumps(mesajlar[-MAX_AI_HAFIZA:], ensure_ascii=False)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             """INSERT INTO ai_hafiza (guild_id, user_id, mesajlar, guncellendi)
                VALUES (?,?,?, datetime('now'))
@@ -1478,7 +1484,7 @@ async def _set_hafiza_db(guild_id: int, user_id: int, mesajlar: list[dict]):
 
 async def _sil_hafiza_db(guild_id: int, user_id: int | None = None):
     """Belirli kullanıcının (ya da tüm sunucunun) hafızasını siler."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         if user_id:
             await db.execute(
                 "DELETE FROM ai_hafiza WHERE guild_id=? AND user_id=?",
@@ -1789,7 +1795,7 @@ class OnayView(discord.ui.View):
     async def onayla(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await is_yetkili(interaction):
             return await interaction.response.send_message("❌ Yetkiniz yok.", ephemeral=True)
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with db_connect() as db:
             await db.execute(
                 "UPDATE roblox_bagla SET onaylandi = 1 WHERE discord_id = ?",
                 (self.target_user_id,))
@@ -1829,7 +1835,7 @@ class OnayView(discord.ui.View):
     async def reddet(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await is_yetkili(interaction):
             return await interaction.response.send_message("❌ Yetkiniz yok.", ephemeral=True)
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with db_connect() as db:
             await db.execute("DELETE FROM roblox_bagla WHERE discord_id = ?", (self.target_user_id,))
             await db.commit()
         user = bot.get_user(self.target_user_id)
@@ -1963,7 +1969,7 @@ class EsyaOnayView(discord.ui.View):
             return await interaction.response.send_message("❌ Yetkiniz yok.", ephemeral=True)
         # Envantere sistem görselini kaydet (varsa), yoksa kullanıcınınkini
         kayit_gorsel = self.sistem_gorsel or self.kullanici_gorsel
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with db_connect() as db:
             await db.execute(
                 "INSERT INTO envanter (discord_id, esya_adi, gorsel_url) VALUES (?, ?, ?)",
                 (self.target_user_id, self.esya_adi, kayit_gorsel))
@@ -2118,7 +2124,7 @@ class HesapBaglaModal(discord.ui.Modal, title="🔗 Roblox Hesap Bağlama"):
 
             # Başka biri bu Roblox hesabına kayıtlı mı?
             if roblox_id:
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with db_connect() as db:
                     async with db.execute(
                         "SELECT discord_id FROM roblox_bagla WHERE roblox_id = ?", (roblox_id,)
                     ) as cur:
@@ -2130,7 +2136,7 @@ class HesapBaglaModal(discord.ui.Modal, title="🔗 Roblox Hesap Bağlama"):
                         ephemeral=True
                     )
 
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with db_connect() as db:
                 await db.execute(
                     "INSERT OR REPLACE INTO roblox_bagla "
                     "(discord_id, roblox_username, roblox_display_name, roblox_id, guild_id, onaylandi) "
@@ -2297,7 +2303,7 @@ async def yetkili_kanal(interaction: discord.Interaction, kanal: discord.TextCha
         stats_add(interaction, success=False, unauth=True)
         return await interaction.response.send_message("❌ Yetkiniz yok.", ephemeral=True)
     await log_usage(interaction, "yetkili-kanal")
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "INSERT OR REPLACE INTO settings (guild_id, log_channel_id) VALUES (?, ?)",
             (interaction.guild_id, kanal.id))
@@ -2330,7 +2336,7 @@ async def yetkili_rol(interaction: discord.Interaction, rol_idler: str):
     if not gecerli_roller:
         return await interaction.response.send_message("❌ Geçerli rol bulunamadı.", ephemeral=True)
     kayit = ",".join(str(r.id) for r in gecerli_roller)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "INSERT INTO settings (guild_id, yetkili_rol_id) VALUES (?, ?) "
             "ON CONFLICT(guild_id) DO UPDATE SET yetkili_rol_id = ?",
@@ -2369,7 +2375,11 @@ async def yardim(interaction: discord.Interaction):
         "`/değer` — MM2 eşya değerini sorgula (eşya yoksa benzer önerir)"
     ), inline=False)
     embed.add_field(name=f"{eu('robot')} Yapay Zeka", value=(
-        "`/yapay-zeka-kur` — Kanala yapay zeka kur *(yetkili)*"
+        "`/yapay-zeka-kur` — AI kanalını kur *(yetkili)*\n"
+        "`/ai-sıfırla` — Sohbet geçmişini ve stilini sıfırla *(AI kanalında da çalışır)*"
+    ), inline=False)
+    embed.add_field(name=f"{eu('ayarlar')} Tercihler", value=(
+        "`/tercihler` — Özel mesaj ve bildirim tercihlerini yönet"
     ), inline=False)
     embed.add_field(name=f"{eu('mesaj')} Diğer", value=(
         "`/özel-mesaj` — DM gönder *(yetkili)*\n"
@@ -2448,7 +2458,7 @@ async def deger(interaction: discord.Interaction, esya: str,
 @tree.command(name="hesap-bağla", description="Roblox hesabınızı Discord'a bağlamak için form açar.")
 async def hesap_bagla(interaction: discord.Interaction):
     # Zaten kayıtlı mı?
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT roblox_username, onaylandi FROM roblox_bagla WHERE discord_id = ?",
             (interaction.user.id,)
@@ -2476,7 +2486,7 @@ async def hesap_goruntule(interaction: discord.Interaction,
     await interaction.response.defer(ephemeral=True)
     await log_usage(interaction, "hesap-görüntüle")
     target = kullanici or interaction.user
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT roblox_username, roblox_id, roblox_display_name, onaylandi "
             "FROM roblox_bagla WHERE discord_id = ?", (target.id,)
@@ -2530,7 +2540,7 @@ async def hesap_sil(interaction: discord.Interaction, kullanici: discord.Member)
     if not await is_yetkili(interaction):
         stats_add(interaction, success=False, unauth=True)
         return await interaction.followup.send("❌ Yetkiniz yok.", ephemeral=True)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute("DELETE FROM roblox_bagla WHERE discord_id = ?", (kullanici.id,))
         await db.commit()
     stats_add(interaction)
@@ -2546,7 +2556,7 @@ async def hesap_bilgi(interaction: discord.Interaction):
     if not await is_yetkili(interaction):
         stats_add(interaction, success=False, unauth=True)
         return await interaction.followup.send("❌ Yetkiniz yok.", ephemeral=True)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT discord_id, roblox_username, onaylandi FROM roblox_bagla WHERE guild_id = ?",
             (interaction.guild_id,)
@@ -2571,7 +2581,7 @@ async def hesap_bilgi(interaction: discord.Interaction):
 async def _esya_gorsel_bul(esya_adi: str) -> str | None:
     """Eşyanın gerçek görselini DB cache'den veya MM2 Checker'dan arar."""
     # 1) Cache'e bak (fuzzy match)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT esya_adi, gorsel_url FROM degerler_cache WHERE gorsel_url IS NOT NULL"
         ) as cur:
@@ -2617,7 +2627,7 @@ async def esya_ekle(interaction: discord.Interaction, esya_adi: str,
         stats_add(interaction, success=False)
         return await interaction.followup.send(
             f"{e('hata')} Yalnızca resim dosyası yüklenebilir (PNG, JPG, GIF).", ephemeral=True)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT onaylandi FROM roblox_bagla WHERE discord_id = ? AND guild_id = ?",
             (interaction.user.id, interaction.guild_id)
@@ -2675,7 +2685,7 @@ async def envanter_goruntule(interaction: discord.Interaction,
         stats_add(interaction, success=False)
         return
     target = kullanici or interaction.user
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT esya_adi, gorsel_url, eklendi_tarih FROM envanter WHERE discord_id = ?",
             (target.id,)
@@ -2687,7 +2697,7 @@ async def envanter_goruntule(interaction: discord.Interaction,
 
     # Tüm eşyaların değer + görsel bilgisini topla
     satirlar = []
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         for esya, gorsel, _ in rows:
             async with db.execute(
                 "SELECT deger_values, gorsel_url FROM degerler_cache WHERE esya_adi = ?",
@@ -2724,7 +2734,7 @@ async def envanter_sil(interaction: discord.Interaction,
     if not await is_yetkili(interaction):
         stats_add(interaction, success=False, unauth=True)
         return await interaction.followup.send("❌ Yetkiniz yok.", ephemeral=True)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "DELETE FROM envanter WHERE discord_id = ? AND esya_adi LIKE ?",
             (kullanici.id, f"%{esya_adi}%"))
@@ -2784,7 +2794,7 @@ async def roblox_arat(interaction: discord.Interaction, kullanici_adi: str):
             embed.add_field(name="Roblox Kayıt", value=profile_data["created"][:10], inline=True)
 
         # Sistem kaydı kontrolü
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with db_connect() as db:
             async with db.execute(
                 "SELECT discord_id FROM roblox_bagla WHERE roblox_id = ?", (roblox_id,)
             ) as cur:
@@ -2821,7 +2831,7 @@ async def yapay_zeka_kur(interaction: discord.Interaction, kanal: discord.TextCh
         return await interaction.response.send_message(
             "❌ Yapay zeka için `GEMINI_API_KEY` secret'ını Replit Secrets'dan ekle.",
             ephemeral=True)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "INSERT INTO settings (guild_id, ai_channel_id) VALUES (?, ?) "
             "ON CONFLICT(guild_id) DO UPDATE SET ai_channel_id = ?",
@@ -2951,7 +2961,7 @@ async def komut_kullanmayan(interaction: discord.Interaction,
     await interaction.response.defer(ephemeral=True)
     await log_usage(interaction, "komut-kullanmayan-görüntüle")
     since = (datetime.datetime.utcnow() - datetime.timedelta(days=gun)).isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         if kapsam.value == "sunucu":
             async with db.execute(
                 "SELECT DISTINCT user_id FROM kullanim_log WHERE guild_id = ? AND tarih >= ?",
@@ -2999,7 +3009,7 @@ async def komut_kullandirt(interaction: discord.Interaction,
     await interaction.response.defer(ephemeral=True)
     await log_usage(interaction, "komut-kullandırt")
     since = (datetime.datetime.utcnow() - datetime.timedelta(days=gun)).isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         async with db.execute(
             "SELECT DISTINCT user_id FROM kullanim_log WHERE tarih >= ?", (since,)
         ) as cur:
@@ -3221,7 +3231,7 @@ async def ai_sifirla(interaction: discord.Interaction):
     await log_usage(interaction, "ai-sıfırla")
     guild_id = interaction.guild_id or 0
     user_id  = interaction.user.id
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with db_connect() as db:
         await db.execute(
             "DELETE FROM ai_hafiza WHERE guild_id = ? AND user_id = ?",
             (guild_id, user_id)
