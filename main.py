@@ -80,6 +80,26 @@ AI_SYSTEM_PROMPT = (
     "Genel kültür soruları için kendi bilgini kullanabilirsin. "
     "Spor / borsa / haber / anlık fiyat gibi konularda YALNIZCA web arama sonuçlarına güven.\n"
 
+    "### KURAL 5 — KONU İZOLASYONU ###\n"
+    "Her soruyu BAĞIMSIZ değerlendir. Önceki konuşmada Türk ordusu konuştuysan "
+    "ve şimdi spor soruluyorsa, öncekini UNUTARAK sadece spor sorusuna cevap ver. "
+    "Konuları birbirine karıştırma, bağdaştırma. Alakasız bağlantılar kurma.\n"
+
+    "### KURAL 6 — ETİKETLENEN KİŞİ ###\n"
+    "Bir kullanıcı etiketlenip hakkında bilgi istenirse SADECE sana verilen "
+    "[Profil:] bölümündeki gerçek verileri kullan. "
+    "Discord profil bilgisi dışında hiçbir şey uydurma.\n"
+
+    "### KURAL 7 — GÖRSEL ANALİZ ###\n"
+    "Kullanıcı bir görsel paylaşırsa önce görseli dikkatle incele, "
+    "içindeki nesne/kişi/metin/sahne hakkında somut ve doğru bilgiler ver. "
+    "Göremiyorsan 'görseli analiz edemedim' de, uydurma.\n"
+
+    "### KURAL 8 — SAÇMA CEVAP YASAĞI ###\n"
+    "Mantıksız, tutarsız veya rastgele cevaplar verme. "
+    "Emin olmadığın şeylerde 'bilmiyorum' ya da 'bu konuda yeterli bilgim yok' de. "
+    "ASLA gerçek olmayan bir bilgiyi gerçekmiş gibi sunma.\n"
+
     "### KURAL 4 — MİLLİ DURUŞ ###\n"
     "Türk milletinin değerlerine, birliğine ve bütünlüğüne sahip çık. "
     "PKK, FETÖ, DHKP-C gibi bölücü terör örgütleri ya da devlete karşı eylemlere dair "
@@ -1146,12 +1166,33 @@ def _temizle_isim_prefix(yanit: str, kullanici_adi: str, display_adi: str) -> st
     return yanit
 
 # ── Görsel URL arama (duckduckgo_search) ────────────────────────────────────
+_GUVENLI_GORSEL_UZANTI = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+_ENGELLENECEK_GORSEL_DOMAIN = ("pinterest.", "adult", "xxx", "nsfw", "18+")
+
 async def _gorsel_url_bul(sorgu: str) -> str | None:
     def _sync():
         try:
             from ddgs import DDGS
             with DDGS() as d:
-                sonuclar = list(d.images(sorgu, max_results=5))
+                sonuclar = list(d.images(
+                    sorgu, max_results=15,
+                    safesearch="moderate",
+                    region="tr-tr"
+                ))
+            for s in sonuclar:
+                url   = s.get("image", "")
+                title = (s.get("title") or "").lower()
+                src   = (s.get("source") or s.get("url") or "").lower()
+                if not url.startswith("http"):
+                    continue
+                # Kötü domain/içerik filtresi
+                if any(b in src or b in url.lower() for b in _ENGELLENECEK_GORSEL_DOMAIN):
+                    continue
+                # Uygun uzantı veya herhangi bir görsel URL
+                url_lower = url.lower().split("?")[0]
+                if any(url_lower.endswith(ext) for ext in _GUVENLI_GORSEL_UZANTI):
+                    return url
+            # Uzantı kontrolü olmadan ilk geçerliyi döndür
             for s in sonuclar:
                 url = s.get("image", "")
                 if url.startswith("http"):
@@ -1306,9 +1347,51 @@ async def handle_ai_message(message: discord.Message):
     son_ts = _ai_son_istek.get((guild_id, user_id), 0)
     kalan = AI_COOLDOWN_SN - (simdi_ts - son_ts)
     if kalan > 0:
-        await message.reply(f"⏳ {int(kalan)+1} saniye bekle, sonra tekrar yaz.")
+        # Sessizce bekle — kullanıcıya "typing" göster, mesajı sonra işle
+        async with message.channel.typing():
+            await asyncio.sleep(kalan)
+        # Bekleme bitti, zaman damgasını güncelle ve devam et
+        _ai_son_istek[(guild_id, user_id)] = _time.monotonic()
+    else:
+        _ai_son_istek[(guild_id, user_id)] = simdi_ts
+
+    # ── Görsel eki var mı? ─────────────────────────────────────────────────
+    gorsel_eki_url: str | None = None
+    for att in message.attachments:
+        ct = att.content_type or ""
+        if ct.startswith("image/") or att.filename.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".gif", ".webp")):
+            gorsel_eki_url = att.url
+            break
+
+    # ── Orta konuşma stil değiştirme isteği ───────────────────────────────
+    _STIL_DEGISTIR_RE = re.compile(
+        r'\b(benimle\s+|artık\s+|bundan\s+sonra\s+)([\w\s]+?)\s+(şekilde\s+konuş|ol\b|konuş\b)',
+        re.I | re.UNICODE
+    )
+    m_stil = _STIL_DEGISTIR_RE.search(message.content)
+    if m_stil and len(message.content) < 250:
+        yeni_stil = message.content.strip()[:200]
+        await _set_ai_stil(guild_id, user_id, yeni_stil, bekliyor=False)
+        await message.reply(
+            f"✅ Anlaşıldı, konuşma stilimi güncelledim: **{yeni_stil}**"
+        )
         return
-    _ai_son_istek[(guild_id, user_id)] = simdi_ts
+
+    # ── Kullanıcı kuralı ("bana X yapma/yap") ─────────────────────────────
+    _KURAL_RE = re.compile(
+        r'\b(bana\s+.{2,60}(yapma|yap|söyleme|söyle|kullanma|kullan|deme|de)\b'
+        r'|beni\s+.{2,60}(olarak\s+)?say\b'
+        r'|asla\s+.{2,60}(yapma|söyleme|deme)\b)',
+        re.I | re.UNICODE
+    )
+    if _KURAL_RE.search(message.content) and len(message.content) < 200:
+        stil_mevcut, bk = await _get_ai_stil(guild_id, user_id)
+        kural_notu = f"[Kullanıcı kuralı: {message.content.strip()[:150]}]"
+        yeni_stil = (stil_mevcut or "") + " | " + kural_notu
+        await _set_ai_stil(guild_id, user_id, yeni_stil[:400], bekliyor=bool(bk))
+        await message.reply("✅ Kaydettim, bunu dikkate alacağım.")
+        return
 
     # ── Stil tercihi akışı ─────────────────────────────────────────────────
     stil, bekliyor = await _get_ai_stil(guild_id, user_id)
@@ -1390,8 +1473,14 @@ async def handle_ai_message(message: discord.Message):
             )
         if komut_sorusu:
             sistem += f"\n=== BOT KOMUTLARI ===\n{_BOT_KOMUT_LISTESI}\n"
+        if gorsel_eki_url:
+            sistem += (
+                f"\n=== KULLANICI GÖRSELİ ===\n"
+                f"Kullanıcı bir görsel paylaştı: {gorsel_eki_url}\n"
+                f"Görseli analiz et, içeriği hakkında Türkçe bilgi ver.\n"
+            )
 
-        kullanici_mesaj = message.content
+        kullanici_mesaj = message.content or ("(görsel paylaştı)" if gorsel_eki_url else "")
         if izlenim_modu and bahsedilen:
             profil = _uye_profil_ozeti(bahsedilen)
             kullanici_mesaj += f"\n\n[Profil:]\n{profil}\nBu kişi hakkında samimi değerlendirme yap."
@@ -1400,15 +1489,52 @@ async def handle_ai_message(message: discord.Message):
             kullanici_mesaj += f"\n\n[Profil:]\n{profil}\nEsprili ve yaratıcı ol, kaba olma."
 
         gecmis  = await _get_hafiza_db(guild_id, user_id)
-        mesajlar = [{"role": "system", "content": sistem}]
-        mesajlar.extend(gecmis)
-        mesajlar.append({"role": "user", "content": kullanici_mesaj[:3000]})
 
-        # Provider fallback — Gemini → OpenRouter
+        # ── Konu değişikliği algılama — geçmişi sınırla ──────────────────
+        def _konu_degisti(yeni: str, gecmis_: list) -> bool:
+            if len(gecmis_) < 4:
+                return False
+            son_icerik = " ".join(
+                m["content"] if isinstance(m.get("content"), str) else ""
+                for m in gecmis_[-4:] if m.get("role") == "user"
+            )
+            yeni_k = set(re.findall(r'\b\w{4,}\b', yeni.lower()))
+            son_k  = set(re.findall(r'\b\w{4,}\b', son_icerik.lower()))
+            if not yeni_k or not son_k:
+                return False
+            overlap = len(yeni_k & son_k) / max(len(yeni_k), 1)
+            return overlap < 0.08  # %8'den az örtüşme = farklı konu
+
+        if _konu_degisti(kullanici_mesaj, gecmis):
+            gecmis = gecmis[-2:]  # sadece son 2 mesajı tut
+
+        # Görsel eki içeren user mesajı — Gemini için multimodal format
+        if gorsel_eki_url:
+            kullanici_mesaj_icerik: object = [
+                {"type": "text",      "text": kullanici_mesaj[:2000]},
+                {"type": "image_url", "image_url": {"url": gorsel_eki_url}},
+            ]
+        else:
+            kullanici_mesaj_icerik = kullanici_mesaj[:3000]
+
+        mesajlar_temel = [{"role": "system", "content": sistem}]
+        mesajlar_temel.extend(gecmis)
+
+        # Provider fallback — Groq → Gemini → OpenRouter
         answer = None
         son_hata = None
         for api_key, base_url, model in providers:
             try:
+                # Vision (multimodal) yalnızca Gemini destekler
+                is_gemini = "generativelanguage" in base_url
+                if gorsel_eki_url and not is_gemini:
+                    # Groq/OpenRouter: text-only, görsel URL'yi text'te belirt
+                    son_mesaj = {"role": "user",
+                                 "content": f"{kullanici_mesaj[:2000]}\n(Görsel: {gorsel_eki_url})"}
+                else:
+                    son_mesaj = {"role": "user", "content": kullanici_mesaj_icerik}
+                mesajlar = mesajlar_temel + [son_mesaj]
+
                 client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=30.0, max_retries=0)
                 resp   = await client.chat.completions.create(
                     model=model, messages=mesajlar, max_tokens=800, temperature=0.75,
@@ -1903,7 +2029,8 @@ def _safe_field(value: str, limit: int = 1024) -> str:
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 def _build_deger_embed(search_term: str, best_values: dict | None,
-                        best_checker: dict | None) -> discord.Embed:
+                        best_checker: dict | None,
+                        sv_data: dict | None = None) -> discord.Embed:
     display_name = (best_checker or best_values or {}).get("name", search_term)
     embed = discord.Embed(
         title=f"{e('elmas')} {display_name}",
@@ -1918,6 +2045,11 @@ def _build_deger_embed(search_term: str, best_values: dict | None,
         chk_val = str(best_checker.get("value") or "—")[:200]
         embed.add_field(name=f"{e('istatistik')} Değer (MM2Checker)",
                         value=f"`{chk_val}`", inline=True)
+    if sv_data:
+        sv_val = str(sv_data.get("value", "—"))[:200]
+        embed.add_field(name=f"{e('istatistik')} Değer (SupremeValues)",
+                        value=f"`{sv_val}`", inline=True)
+    if best_checker:
         details = []
         for k, label in [("demand", "Talep"), ("rarity", "Nadir"), ("obtained", "Edinim")]:
             if best_checker.get(k):
@@ -1933,7 +2065,8 @@ def _build_deger_embed(search_term: str, best_values: dict | None,
     sources = []
     if best_values:  sources.append("mm2values.com")
     if best_checker: sources.append("mm2checker.com")
-    embed.set_footer(text=f"{'&'.join(sources)} | {search_term[:80]}")
+    if sv_data:      sources.append("supremevalues.com")
+    embed.set_footer(text=f"{'  |  '.join(sources) or '?'} — {search_term[:80]}")
     return embed
 
 # ─── TERCİHLER VIEW ───────────────────────────────────────────────────────────
@@ -2112,7 +2245,12 @@ async def deger(interaction: discord.Interaction, esya: str,
 
         best_checker = checker_find(search_term, chroma=is_chroma)
 
-        if not best_values and not best_checker:
+        # supremevalues.com — 3. kaynak
+        sv_data = await fetch_supremevalues(search_term)
+        if not sv_data and esya != search_term:
+            sv_data = await fetch_supremevalues(esya)
+
+        if not best_values and not best_checker and not sv_data:
             # Fuzzy suggest from cache
             suggestion = None
             if _MM2CHECKER_CACHE:
@@ -2129,7 +2267,7 @@ async def deger(interaction: discord.Interaction, esya: str,
             stats_add(interaction, success=False, error=True)
             return await interaction.followup.send(f"❌ **{esya}** bulunamadı.")
 
-        embed = _build_deger_embed(search_term, best_values, best_checker)
+        embed = _build_deger_embed(search_term, best_values, best_checker, sv_data=sv_data)
         stats_add(interaction)
         await interaction.followup.send(embed=embed)
     except Exception as ex:
@@ -2565,15 +2703,16 @@ async def ozel_mesaj(
             "❌ **Genel** kapsam yalnızca bot sahibi tarafından kullanılabilir.", ephemeral=True)
 
     bot_avatar = bot.user.display_avatar.url if bot.user else None
+    sunucu_adi = interaction.guild.name if interaction.guild else "Bot"
+    embed_title = "📩 Mm2 Bot" if kapsam_val == "genel" else f"📩 {sunucu_adi}"
     embed = discord.Embed(
-        title=f"📩 {interaction.guild.name if interaction.guild else 'Mesaj'}",
+        title=embed_title,
         description=f">>> {mesaj}",
         color=0x5865F2, timestamp=datetime.datetime.utcnow())
 
     if kapsam_val == "genel":
         # Genel modda: bot profil resmi, hangi sunucudan gönderildiği
-        sunucu_adi = interaction.guild.name if interaction.guild else "Bot"
-        embed.set_author(name=bot.user.name if bot.user else "Bot", icon_url=bot_avatar)
+        embed.set_author(name=bot.user.name if bot.user else "Mm2 Bot", icon_url=bot_avatar)
         embed.set_thumbnail(url=bot_avatar)
         embed.set_footer(text=f"Gönderildiği sunucu: {sunucu_adi}")
     elif interaction.guild:
@@ -2885,7 +3024,18 @@ async def ai_sifirla(interaction: discord.Interaction):
     stats_add(interaction)
     em = discord.Embed(
         title="🔄 AI Sıfırlandı",
-        description="Sohbet geçmişin ve stil tercihin temizlendi. Artık yeni bir sohbet gibi başlayacak.",
+        description=(
+            "Sohbet geçmişin ve stil tercihin temizlendi.\n"
+            "Bir sonraki mesajında nasıl konuşmamı istediğini belirteceksin.\n\n"
+            "**Bot ile nasıl konuşulur?**\n"
+            "• AI kanalına ya da bota DM olarak mesaj yaz.\n"
+            "• Stil sorusunu cevapla: `samimi`, `kısa`, `resmi`, `eğlenceli` gibi.\n"
+            "• Konuşma stilini değiştirmek için: `benimle daha resmi konuş` yaz.\n"
+            "• Bir şeyi hafızalatmak için: `bana asla X deme` veya `beni Y olarak say` yaz.\n"
+            "• Web'den anlık bilgi almak için soruyu normal yaz — bot otomatik arar.\n"
+            "• Görsel için: `... göster` veya `... fotoğrafını bul` yaz.\n"
+            "• Sıfırlamak için: `/ai-sıfırla` komutunu tekrar kullan."
+        ),
         color=discord.Color.green()
     )
     await interaction.followup.send(embed=em, ephemeral=True)
