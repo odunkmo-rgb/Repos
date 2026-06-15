@@ -178,7 +178,39 @@ EMOJI_SLOTS: dict[str, str] = {
     "robot":      "<:884541robotsmiling:1516115204868542554>",
 }
 def e(slot: str) -> str:
+    """Custom Discord emoji — mesaj içeriği ve embed description'da kullan."""
     return EMOJI_SLOTS.get(slot, "")
+
+# Embed title= ve add_field(name=...) için Unicode yedekler
+# (Discord bu alanlarda <a:name:id> render etmez)
+_EMOJI_UNICODE: dict[str, str] = {
+    "ara":        "🔍",
+    "bagla":      "🔗",
+    "envanter":   "🎒",
+    "onay":       "✅",
+    "hata":       "❌",
+    "kullanici":  "👤",
+    "duyuru":     "📢",
+    "istatistik": "📊",
+    "guncelle":   "🔄",
+    "elmas":      "💎",
+    "sunucu":     "🌐",
+    "bekle":      "⏳",
+    "liste":      "📋",
+    "ekle":       "➕",
+    "ayarlar":    "⚙️",
+    "mesaj":      "📨",
+    "kalkan":     "🛡️",
+    "takvim":     "📅",
+    "kilit":      "🔒",
+    "yildiz":     "⭐",
+    "roblox":     "🎮",
+    "bilgi":      "ℹ️",
+    "robot":      "🤖",
+}
+def eu(slot: str) -> str:
+    """Unicode yedek emoji — embed title ve field name için kullan."""
+    return _EMOJI_UNICODE.get(slot, "")
 
 # ─── LOGGING ──────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -856,7 +888,7 @@ async def gunluk_guncelleme():
 
     top_server = max(stats["servers"], key=stats["servers"].get) if stats["servers"] else "Yok"
     embed = discord.Embed(
-        title=f"{e('istatistik')} Günlük Bot Raporu",
+        title=f"{eu('istatistik')} Günlük Bot Raporu",
         description=f"**Tarih:** {datetime.date.today().strftime('%d/%m/%Y')}",
         color=discord.Color.gold(),
         timestamp=datetime.datetime.utcnow()
@@ -867,7 +899,7 @@ async def gunluk_guncelleme():
                f"{e('hata')} Hata: `{stats['errors']}`\n{e('kalkan')} Yetkisiz: `{stats['unauthorized']}`"),
         inline=False
     )
-    embed.add_field(name=f"{e('yildiz')} En Aktif Sunucu", value=f"`{top_server}`", inline=False)
+    embed.add_field(name=f"{eu('yildiz')} En Aktif Sunucu", value=f"`{top_server}`", inline=False)
 
     if eklenenler:
         embed.add_field(
@@ -1775,7 +1807,7 @@ class OnayView(discord.ui.View):
         if user:
             try:
                 await user.send(embed=discord.Embed(
-                    title=f"{e('onay')} Hesap Bağlama Onaylandı!",
+                    title=f"{eu('onay')} Hesap Bağlama Onaylandı!",
                     description=f"Roblox hesabın (`{roblox_name}`) Discord'una bağlandı.",
                     color=discord.Color.green()
                 ))
@@ -1804,7 +1836,7 @@ class OnayView(discord.ui.View):
         if user:
             try:
                 await user.send(embed=discord.Embed(
-                    title=f"{e('hata')} Hesap Bağlama Reddedildi",
+                    title=f"{eu('hata')} Hesap Bağlama Reddedildi",
                     description="Talebiniz reddedildi. Doğru kullanıcı adıyla tekrar deneyin.",
                     color=discord.Color.red()
                 ))
@@ -1846,7 +1878,7 @@ class ReddetModal(discord.ui.Modal, title="Reddetme Sebebi"):
         if user:
             try:
                 em = discord.Embed(
-                    title=f"{e('hata')} Eşya Talebi Reddedildi",
+                    title=f"{eu('hata')} Eşya Talebi Reddedildi",
                     description=f"**{self.esya_adi}** ekleme talebiniz reddedildi.",
                     color=discord.Color.red()
                 )
@@ -1879,7 +1911,7 @@ class EsyaOnaylamaView(discord.ui.View):
     async def onayla(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Log kanalına her iki fotoğrafı gönder
         embed = discord.Embed(
-            title=f"{e('envanter')} Yeni Eşya Talebi",
+            title=f"{eu('envanter')} Yeni Eşya Talebi",
             description=(
                 "**Yetkililer:** Aşağıdaki kullanıcı fotoğrafı (büyük) ile "
                 "sistemdeki eşya fotoğrafı (küçük/sağ) karşılaştırın."
@@ -1887,9 +1919,9 @@ class EsyaOnaylamaView(discord.ui.View):
             color=discord.Color.gold(),
             timestamp=datetime.datetime.utcnow()
         )
-        embed.add_field(name=f"{e('kullanici')} Kullanıcı",
+        embed.add_field(name=f"{eu('kullanici')} Kullanıcı",
                         value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
-        embed.add_field(name=f"{e('elmas')} Eşya Adı", value=f"`{self.esya_adi}`", inline=True)
+        embed.add_field(name=f"{eu('elmas')} Eşya Adı", value=f"`{self.esya_adi}`", inline=True)
         embed.set_image(url=self.kullanici_gorsel)          # kullanıcı fotoğrafı (büyük)
         if self.sistem_gorsel:
             embed.set_thumbnail(url=self.sistem_gorsel)    # sistem fotoğrafı (küçük, sağda)
@@ -1942,7 +1974,7 @@ class EsyaOnayView(discord.ui.View):
         if user:
             try:
                 em = discord.Embed(
-                    title=f"{e('envanter')} Eşya Talebiniz Onaylandı!",
+                    title=f"{eu('envanter')} Eşya Talebiniz Onaylandı!",
                     description=f"**{self.esya_adi}** envanterinize eklendi.",
                     color=discord.Color.green()
                 )
@@ -2117,13 +2149,13 @@ class HesapBaglaModal(discord.ui.Modal, title="🔗 Roblox Hesap Bağlama"):
                     )
                 bio = profile_data.get("description", "").strip()
                 em  = discord.Embed(
-                    title=f"{e('bagla')} Yeni Hesap Bağlama Talebi",
+                    title=f"{eu('bagla')} Yeni Hesap Bağlama Talebi",
                     color=discord.Color.orange(),
                     timestamp=datetime.datetime.utcnow()
                 )
-                em.add_field(name=f"{e('kullanici')} Discord",
+                em.add_field(name=f"{eu('kullanici')} Discord",
                              value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
-                em.add_field(name=f"{e('roblox')} Roblox", value=f"`{kullanici_adi}`", inline=True)
+                em.add_field(name=f"{eu('roblox')} Roblox", value=f"`{kullanici_adi}`", inline=True)
                 if roblox_display != kullanici_adi:
                     em.add_field(name="Görünen Ad", value=f"`{roblox_display}`", inline=True)
                 em.add_field(name="Roblox ID", value=f"`{roblox_id or 'Bulunamadı'}`", inline=True)
@@ -2170,21 +2202,21 @@ def _build_deger_embed(search_term: str, best_values: dict | None,
                         sv_data: dict | None = None) -> discord.Embed:
     display_name = (best_checker or best_values or {}).get("name", search_term)
     embed = discord.Embed(
-        title=f"{e('elmas')} {display_name}",
+        title=f"{eu('elmas')} {display_name}",
         color=discord.Color.purple(),
         timestamp=datetime.datetime.utcnow()
     )
     if best_values:
         val_str = str(best_values.get("value", "—"))[:200]
-        embed.add_field(name=f"{e('istatistik')} Değer (MM2Values)",
+        embed.add_field(name=f"{eu('istatistik')} Değer (MM2Values)",
                         value=f"`{val_str}`", inline=True)
     if best_checker:
         chk_val = str(best_checker.get("value") or "—")[:200]
-        embed.add_field(name=f"{e('istatistik')} Değer (MM2Checker)",
+        embed.add_field(name=f"{eu('istatistik')} Değer (MM2Checker)",
                         value=f"`{chk_val}`", inline=True)
     if sv_data:
         sv_val = str(sv_data.get("value", "—"))[:200]
-        embed.add_field(name=f"{e('istatistik')} Değer (SupremeValues)",
+        embed.add_field(name=f"{eu('istatistik')} Değer (SupremeValues)",
                         value=f"`{sv_val}`", inline=True)
     if best_checker:
         details = []
@@ -2192,7 +2224,7 @@ def _build_deger_embed(search_term: str, best_values: dict | None,
             if best_checker.get(k):
                 details.append(f"{label}: `{best_checker[k]}`")
         if details:
-            embed.add_field(name=f"{e('liste')} Detaylar",
+            embed.add_field(name=f"{eu('liste')} Detaylar",
                             value=_safe_field("\n".join(details)), inline=False)
         if best_checker.get("image"):
             embed.set_thumbnail(url=best_checker["image"])
@@ -2315,31 +2347,31 @@ async def yetkili_rol(interaction: discord.Interaction, rol_idler: str):
 async def yardim(interaction: discord.Interaction):
     await log_usage(interaction, "yardım")
     stats_add(interaction)
-    embed = discord.Embed(title=f"{e('bilgi')} Komut Listesi",
+    embed = discord.Embed(title=f"{eu('bilgi')} Komut Listesi",
                           color=discord.Color.blurple(), timestamp=datetime.datetime.utcnow())
-    embed.add_field(name=f"{e('ayarlar')} Ayarlar *(yetkili)*", value=(
+    embed.add_field(name=f"{eu('ayarlar')} Ayarlar *(yetkili)*", value=(
         "`/yetkili-kanal` — Log kanalını ayarlar\n"
         "`/yetkili-rol` — Yetkili rolünü ayarlar"
     ), inline=False)
-    embed.add_field(name=f"{e('kullanici')} Hesap", value=(
+    embed.add_field(name=f"{eu('kullanici')} Hesap", value=(
         "`/hesap-bağla` — Roblox hesabını bağla (onay bekler)\n"
         "`/hesap-görüntüle` — Bağlı Roblox profilini göster\n"
         "`/hesap-sil` — Hesap bağlantısını sil *(yetkili)*\n"
         "`/hesap-bilgi` — Bağlı/bağlı olmayan listesi *(yetkili)*\n"
         "`/roblox-arat` — Roblox kullanıcısını ara + sistem kontrolü *(yetkili)*"
     ), inline=False)
-    embed.add_field(name=f"{e('envanter')} Envanter", value=(
+    embed.add_field(name=f"{eu('envanter')} Envanter", value=(
         "`/eşya-ekle` — Eşya ekleme talebi oluştur (onay gerekli)\n"
         "`/envanter-görüntüle` — Envanterini görüntüle\n"
         "`/envanter-sil` — Envanterden eşya sil *(yetkili)*"
     ), inline=False)
-    embed.add_field(name=f"{e('elmas')} MM2 Değer", value=(
+    embed.add_field(name=f"{eu('elmas')} MM2 Değer", value=(
         "`/değer` — MM2 eşya değerini sorgula (eşya yoksa benzer önerir)"
     ), inline=False)
-    embed.add_field(name=f"{e('robot')} Yapay Zeka", value=(
+    embed.add_field(name=f"{eu('robot')} Yapay Zeka", value=(
         "`/yapay-zeka-kur` — Kanala yapay zeka kur *(yetkili)*"
     ), inline=False)
-    embed.add_field(name=f"{e('mesaj')} Diğer", value=(
+    embed.add_field(name=f"{eu('mesaj')} Diğer", value=(
         "`/özel-mesaj` — DM gönder *(yetkili)*\n"
         "`/sunucular` — Bot sunucuları *(sahip)*\n"
         "`/durum` — Bot durumu manuel güncelle *(sahip)*\n"
@@ -2466,12 +2498,12 @@ async def hesap_goruntule(interaction: discord.Interaction,
         )
 
     embed = discord.Embed(
-        title=f"{e('kullanici')} {username} — Roblox Profili",
+        title=f"{eu('kullanici')} {username} — Roblox Profili",
         url=f"https://www.roblox.com/users/{roblox_id}/profile" if roblox_id else None,
         color=discord.Color.green()
     )
     embed.add_field(name="Discord",         value=target.mention, inline=True)
-    embed.add_field(name=f"{e('roblox')} Roblox", value=f"`{username}`", inline=True)
+    embed.add_field(name=f"{eu('roblox')} Roblox", value=f"`{username}`", inline=True)
     if display_name and display_name != username:
         embed.add_field(name="Görünen Ad",  value=f"`{display_name}`", inline=True)
     embed.add_field(name="Roblox ID",       value=f"`{roblox_id or 'N/A'}`", inline=True)
@@ -2529,10 +2561,10 @@ async def hesap_bilgi(interaction: discord.Interaction):
     bo_str = ", ".join([m.mention for m in bagli_olmayan[:20]]) or "Yok"
     if len(bagli_olmayan) > 20:
         bo_str += f" ... ve {len(bagli_olmayan)-20} kişi daha"
-    embed = discord.Embed(title=f"{e('liste')} Hesap Bilgileri",
+    embed = discord.Embed(title=f"{eu('liste')} Hesap Bilgileri",
                           color=discord.Color.blue(), timestamp=datetime.datetime.utcnow())
-    embed.add_field(name=f"{e('onay')} Bağlı ({len(rows)})",           value=bagli_str[:1024], inline=False)
-    embed.add_field(name=f"{e('hata')} Bağlı Olmayan ({len(bagli_olmayan)})", value=bo_str[:1024], inline=False)
+    embed.add_field(name=f"{eu('onay')} Bağlı ({len(rows)})",           value=bagli_str[:1024], inline=False)
+    embed.add_field(name=f"{eu('hata')} Bağlı Olmayan ({len(bagli_olmayan)})", value=bo_str[:1024], inline=False)
     stats_add(interaction)
     await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -2736,13 +2768,13 @@ async def roblox_arat(interaction: discord.Interaction, kullanici_adi: str):
         )
 
         embed = discord.Embed(
-            title=f"{e('ara')} Roblox: {roblox_name}",
+            title=f"{eu('ara')} Roblox: {roblox_name}",
             url=f"https://www.roblox.com/users/{roblox_id}/profile",
             color=discord.Color.red())
         if display_n != roblox_name:
             embed.add_field(name="Görünen Ad", value=f"`{display_n}`", inline=True)
         embed.add_field(name="ID", value=f"`{roblox_id}`", inline=True)
-        embed.add_field(name=f"{e('bilgi')} Profil",
+        embed.add_field(name=f"{eu('bilgi')} Profil",
                         value=f"[Roblox'ta Gör](https://www.roblox.com/users/{roblox_id}/profile)",
                         inline=True)
         if profile_data.get("description"):
@@ -2796,7 +2828,7 @@ async def yapay_zeka_kur(interaction: discord.Interaction, kanal: discord.TextCh
             (interaction.guild_id, kanal.id, kanal.id))
         await db.commit()
     embed = discord.Embed(
-        title=f"{e('robot')} Yapay Zeka Kuruldu",
+        title=f"{eu('robot')} Yapay Zeka Kuruldu",
         description=f"{kanal.mention} kanalına yapay zeka bağlandı.\n"
                     "O kanalda yazılan her mesaja belalı kişiliğiyle cevap verecek.",
         color=discord.Color.blurple())
@@ -3169,7 +3201,7 @@ async def durum_dongu(
 
     emoji_aciklama = f"\n**Emoji Ön Ayarı:** `{on_ayar_emoji.name}`" if on_ayar_emoji else ""
     embed = discord.Embed(
-        title=f"{e('guncelle')} Dönen Durum Aktif",
+        title=f"{eu('guncelle')} Dönen Durum Aktif",
         description=(
             f"**Aralık:** Her {dakika} dakikada bir"
             f"{emoji_aciklama}\n\n"
