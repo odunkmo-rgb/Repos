@@ -100,12 +100,18 @@ AI_SYSTEM_PROMPT = (
     "Emin olmadığın şeylerde 'bilmiyorum' ya da 'bu konuda yeterli bilgim yok' de. "
     "ASLA gerçek olmayan bir bilgiyi gerçekmiş gibi sunma.\n"
 
-    "### KURAL 4 — MİLLİ DURUŞ ###\n"
+    "### KURAL 4 — MİLLİ DURUŞ & TERÖR YASAĞI ###\n"
     "Türk milletinin değerlerine, birliğine ve bütünlüğüne sahip çık. "
-    "PKK, FETÖ, DHKP-C gibi bölücü terör örgütleri ya da devlete karşı eylemlere dair "
-    "sorularda güçlü bir Türk milliyetçisi tutumla cevap ver; devleti ve milleti savun. "
-    "Bu grupları hiçbir zaman 'özgürlük savaşçısı', 'haklı', 'mağdur' gibi ifadelerle "
-    "nitelendirme. Türk devletinin egemenliğini ve ülke bütünlüğünü ön planda tut.\n"
+    "PKK, YPG, KCK, FETÖ, DHKP-C, IŞİD/DAEŞ ve benzeri her türlü terör örgütünü, "
+    "bölücü yapıyı veya silahlı grubunu ASLA olumlamaz, övmez, haklı göstermezsin. "
+    "Bu örgütleri 'özgürlük savaşçısı', 'haklı direniş', 'mağdur', 'kahraman' gibi "
+    "ifadelerle nitelendirmek KESİNLİKLE YASAKTIR. "
+    "Kürt siyasi meselelerinde tarafsız bilgi verebilirsin; ancak bölücü silahlı "
+    "yapıları, PKK/YPG propagandasını veya Türkiye'nin toprak bütünlüğüne karşı "
+    "söylemleri destekleyen, meşrulaştıran hiçbir ifade kullanamazsın. "
+    "Terör eylemleri, saldırılar, bombalı eylemler ve silahlı isyanlar hakkında "
+    "hiçbir şekilde sempati, methiye veya onay içeren cevap veremezsin. "
+    "Bu kurala aykırı bir soru geldiğinde kibarca reddet ve konu dışı olduğunu belirt.\n"
 
     "### GENEL ###\n"
     "Cevap uzunluğunu soruyla orantıla. Emoji kullanabilirsin ama abartma. "
@@ -622,6 +628,76 @@ _KOMUT_ACIKLAMALARI: dict[str, str] = {
     "yetkili-rol":                  "Yetkili rolü ayarlandı",
 }
 
+# ─── BUTON AÇIKLAMALARI ────────────────────────────────────────────────────────
+_BUTON_ACIKLAMALARI: dict[str, dict[str, str]] = {
+    # OnayView — /hesap-bağla
+    "hesap_onayla": {
+        "komut": "/hesap-bağla",
+        "etiket": "✅ Onayla",
+        "islem": "Roblox hesabı onaylandı → veritabanına işlendi, kullanıcıya DM & nickname güncellendi",
+    },
+    "hesap_reddet": {
+        "komut": "/hesap-bağla",
+        "etiket": "❌ Reddet",
+        "islem": "Roblox hesap bağlama talebi reddedildi → kayıt silindi, kullanıcıya DM gönderildi",
+    },
+    # EsyaOnaylamaView — /eşya-ekle (kullanıcı tarafı onayı)
+    "esya_gonder": {
+        "komut": "/eşya-ekle",
+        "etiket": "✅ Evet, Uyuyor — Gönder",
+        "islem": "Kullanıcı fotoğrafın uyduğunu onayladı → talep yetkililere iletildi",
+    },
+    "esya_degistir": {
+        "komut": "/eşya-ekle",
+        "etiket": "✏️ Uymuyor — Değiştir",
+        "islem": "Kullanıcı fotoğrafın uymadığını belirtti → işlem iptal edildi, yeniden deneyecek",
+    },
+    # EsyaOnayView — /eşya-ekle (yetkili onayı)
+    "esya_onayla": {
+        "komut": "/eşya-ekle (yetkili)",
+        "etiket": "✅ Onayla",
+        "islem": "Yetkili eşya talebini onayladı → envantere eklendi, kullanıcıya DM gönderildi",
+    },
+    "esya_reddet": {
+        "komut": "/eşya-ekle (yetkili)",
+        "etiket": "❌ Reddet",
+        "islem": "Yetkili eşya talebini reddetti → sebep modalı açıldı, kullanıcıya DM gönderilecek",
+    },
+    # EnvanterPaginatorView — /envanter-görüntüle
+    "envanter_geri": {
+        "komut": "/envanter-görüntüle",
+        "etiket": "⬅️ Önceki Sayfa",
+        "islem": "Envanter listesinde bir önceki sayfaya geçildi",
+    },
+    "envanter_sayfa": {
+        "komut": "/envanter-görüntüle",
+        "etiket": "Sayfa Göstergesi",
+        "islem": "Sayfa numarası gösterge butonu (işlem yok)",
+    },
+    "envanter_ileri": {
+        "komut": "/envanter-görüntüle",
+        "etiket": "➡️ Sonraki Sayfa",
+        "islem": "Envanter listesinde bir sonraki sayfaya geçildi",
+    },
+    # EnYakinView — /değer
+    "en_yakin": {
+        "komut": "/değer",
+        "etiket": "🔍 En yakın eşyayı göster",
+        "islem": "Eşya bulunamadı → benzer/yakın eşyanın değeri sorgulandı ve gösterildi",
+    },
+    # TercihlerView — /tercihler
+    "pref_ozel_dm": {
+        "komut": "/tercihler",
+        "etiket": "📨 Özel Mesaj",
+        "islem": "Özel mesaj (DM) alma tercihi açıldı veya kapatıldı",
+    },
+    "pref_envanter": {
+        "komut": "/tercihler",
+        "etiket": "📦 Envanter Bildirimi",
+        "islem": "Envanter bildirimi tercihi açıldı veya kapatıldı",
+    },
+}
+
 async def send_interaction_log(interaction: discord.Interaction, tip: str, channel_id: int):
     try:
         channel = bot.get_channel(channel_id)
@@ -660,8 +736,25 @@ async def send_interaction_log(interaction: discord.Interaction, tip: str, chann
         # Buton için custom_id'den bağlam çıkar
         if tip == "button":
             btn_id = data.get("custom_id", "")
-            if btn_id:
-                embed.add_field(name="Buton", value=f"`{btn_id}`", inline=True)
+            btn_bilgi = _BUTON_ACIKLAMALARI.get(btn_id)
+            if btn_bilgi:
+                embed.add_field(
+                    name="🖱️ Basılan Buton",
+                    value=f"`{btn_bilgi['etiket']}`",
+                    inline=True,
+                )
+                embed.add_field(
+                    name="📂 Ait Olduğu Komut",
+                    value=f"`{btn_bilgi['komut']}`",
+                    inline=True,
+                )
+                embed.add_field(
+                    name="📋 Yapılan İşlem",
+                    value=btn_bilgi["islem"],
+                    inline=False,
+                )
+            elif btn_id:
+                embed.add_field(name="🖱️ Buton ID", value=f"`{btn_id}`", inline=True)
         await channel.send(embed=embed)
     except Exception as ex:
         logger.error(f"Log gönderilemedi: {ex}")
@@ -1643,7 +1736,7 @@ class OnayView(discord.ui.View):
         super().__init__(timeout=None)
         self.target_user_id = target_user_id
 
-    @discord.ui.button(label="✅ Onayla", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="✅ Onayla", style=discord.ButtonStyle.success, custom_id="hesap_onayla")
     async def onayla(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await is_yetkili(interaction):
             return await interaction.response.send_message("❌ Yetkiniz yok.", ephemeral=True)
@@ -1683,7 +1776,7 @@ class OnayView(discord.ui.View):
         except discord.HTTPException:
             pass
 
-    @discord.ui.button(label="❌ Reddet", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="❌ Reddet", style=discord.ButtonStyle.danger, custom_id="hesap_reddet")
     async def reddet(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await is_yetkili(interaction):
             return await interaction.response.send_message("❌ Yetkiniz yok.", ephemeral=True)
@@ -1765,7 +1858,7 @@ class EsyaOnaylamaView(discord.ui.View):
         self.kullanici_gorsel = kullanici_gorsel
         self.log_ch_id        = log_ch_id
 
-    @discord.ui.button(label="✅ Evet, Uyuyor — Gönder", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="✅ Evet, Uyuyor — Gönder", style=discord.ButtonStyle.success, custom_id="esya_gonder")
     async def onayla(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Log kanalına her iki fotoğrafı gönder
         embed = discord.Embed(
@@ -1796,7 +1889,7 @@ class EsyaOnaylamaView(discord.ui.View):
             embed=None, view=self
         )
 
-    @discord.ui.button(label="✏️ Uymuyor — Değiştir", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="✏️ Uymuyor — Değiştir", style=discord.ButtonStyle.danger, custom_id="esya_degistir")
     async def degistir(self, interaction: discord.Interaction, button: discord.ui.Button):
         for item in self.children:
             item.disabled = True
@@ -1815,7 +1908,7 @@ class EsyaOnayView(discord.ui.View):
         self.sistem_gorsel    = sistem_gorsel
         self.kullanici_gorsel = kullanici_gorsel
 
-    @discord.ui.button(label="✅ Onayla", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="✅ Onayla", style=discord.ButtonStyle.success, custom_id="esya_onayla")
     async def onayla(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await is_yetkili(interaction):
             return await interaction.response.send_message("❌ Yetkiniz yok.", ephemeral=True)
@@ -1848,7 +1941,7 @@ class EsyaOnayView(discord.ui.View):
         except discord.HTTPException:
             pass
 
-    @discord.ui.button(label="❌ Reddet", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="❌ Reddet", style=discord.ButtonStyle.danger, custom_id="esya_reddet")
     async def reddet(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await is_yetkili(interaction):
             return await interaction.response.send_message("❌ Yetkiniz yok.", ephemeral=True)
@@ -1910,17 +2003,17 @@ class EnvanterPaginatorView(discord.ui.View):
         embed.set_footer(text=f"Sayfa {self.sayfa + 1}/{self.toplam_sayfa}")
         return embed
 
-    @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.secondary, custom_id="envanter_geri")
     async def onceki_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.sayfa -= 1
         self._butonlari_guncelle()
         await interaction.response.edit_message(embed=self._embed_olustur(), view=self)
 
-    @discord.ui.button(label="1 / 1", style=discord.ButtonStyle.primary, disabled=True)
+    @discord.ui.button(label="1 / 1", style=discord.ButtonStyle.primary, disabled=True, custom_id="envanter_sayfa")
     async def sayfa_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass  # sadece sayfa numarası gösterir
 
-    @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.secondary, custom_id="envanter_ileri")
     async def sonraki_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.sayfa += 1
         self._butonlari_guncelle()
@@ -1933,7 +2026,7 @@ class EnYakinView(discord.ui.View):
         super().__init__(timeout=120)
         self.suggestion_name = suggestion_name
 
-    @discord.ui.button(label="En yakın eşyayı göster", style=discord.ButtonStyle.primary, emoji="🔍")
+    @discord.ui.button(label="En yakın eşyayı göster", style=discord.ButtonStyle.primary, emoji="🔍", custom_id="en_yakin")
     async def goster(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         results = await search_mm2values(self.suggestion_name)
@@ -2120,7 +2213,7 @@ class TercihlerView(discord.ui.View):
         em.set_footer(text="Değişiklikler anında kaydedilir.")
         return em
 
-    @discord.ui.button(label="📨 Özel Mesaj", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📨 Özel Mesaj", style=discord.ButtonStyle.secondary, custom_id="pref_ozel_dm")
     async def toggle_ozel_mesaj(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("❌ Sadece kendi tercihlerini değiştirebilirsin.", ephemeral=True)
@@ -2132,7 +2225,7 @@ class TercihlerView(discord.ui.View):
         button.label = f"📨 Özel Mesaj — {'✅' if yeni else '❌'}"
         await interaction.response.edit_message(embed=self._embed(), view=self)
 
-    @discord.ui.button(label="📦 Envanter Bildirimi", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📦 Envanter Bildirimi", style=discord.ButtonStyle.secondary, custom_id="pref_envanter")
     async def toggle_envanter(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("❌ Sadece kendi tercihlerini değiştirebilirsin.", ephemeral=True)
@@ -2731,17 +2824,21 @@ async def ozel_mesaj(
 
     bot_avatar = bot.user.display_avatar.url if bot.user else None
     sunucu_adi = interaction.guild.name if interaction.guild else "Bot"
-    embed_title = "📩 Mm2 Bot" if kapsam_val == "genel" else f"📩 {sunucu_adi}"
+    if kapsam_val == "genel":
+        embed_title = "✉️ Mm2 Bot — Resmi Mesaj"
+        embed_color = 0x2B2D31
+    else:
+        embed_title = f"📩 {sunucu_adi}"
+        embed_color = 0x5865F2
     embed = discord.Embed(
         title=embed_title,
-        description=f">>> {mesaj}",
-        color=0x5865F2, timestamp=datetime.datetime.utcnow())
+        description=f"\n{mesaj}\n",
+        color=embed_color, timestamp=datetime.datetime.utcnow())
 
     if kapsam_val == "genel":
-        # Genel modda: bot profil resmi, hangi sunucudan gönderildiği
-        embed.set_author(name=bot.user.name if bot.user else "Mm2 Bot", icon_url=bot_avatar)
+        # Genel modda: bot profil resmi, kaynak sunucu gizlenir
+        embed.set_author(name="Mm2 Bot", icon_url=bot_avatar)
         embed.set_thumbnail(url=bot_avatar)
-        embed.set_footer(text=f"Gönderildiği sunucu: {sunucu_adi}")
     elif interaction.guild:
         icon_url = interaction.guild.icon.url if interaction.guild.icon else None
         embed.set_author(name=interaction.guild.name, icon_url=icon_url)
