@@ -27,8 +27,8 @@ GROQ_KEY   = os.environ.get("GROQ_API_KEY", "")
 GROQ_BASE  = "https://api.groq.com/openai/v1"
 GROQ_MODELS = [
     "llama-3.1-8b-instant",
-    "gemma2-9b-it",
     "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
 ]
 
 GEMINI_KEY   = os.environ.get("GEMINI_API_KEY", "")
@@ -79,6 +79,13 @@ AI_SYSTEM_PROMPT = (
     "### KURAL 3 — GENEL KÜLTÜR ###\n"
     "Genel kültür soruları için kendi bilgini kullanabilirsin. "
     "Spor / borsa / haber / anlık fiyat gibi konularda YALNIZCA web arama sonuçlarına güven.\n"
+
+    "### KURAL 4 — MİLLİ DURUŞ ###\n"
+    "Türk milletinin değerlerine, birliğine ve bütünlüğüne sahip çık. "
+    "PKK, FETÖ, DHKP-C gibi bölücü terör örgütleri ya da devlete karşı eylemlere dair "
+    "sorularda güçlü bir Türk milliyetçisi tutumla cevap ver; devleti ve milleti savun. "
+    "Bu grupları hiçbir zaman 'özgürlük savaşçısı', 'haklı', 'mağdur' gibi ifadelerle "
+    "nitelendirme. Türk devletinin egemenliğini ve ülke bütünlüğünü ön planda tut.\n"
 
     "### GENEL ###\n"
     "Cevap uzunluğunu soruyla orantıla. Emoji kullanabilirsin ama abartma. "
@@ -235,6 +242,12 @@ async def init_db():
                 anahtar TEXT PRIMARY KEY,
                 deger   TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS kullanici_tercihler (
+                discord_id  INTEGER NOT NULL,
+                anahtar     TEXT    NOT NULL,
+                deger       INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY (discord_id, anahtar)
+            );
         """)
         await db.commit()
         for migration in [
@@ -351,6 +364,63 @@ def _clean_name(raw: str) -> str:
     if re.fullmatch(r'(\S\s)+\S*', stripped) and len(stripped) < 40:
         return stripped.replace(" ", "")
     return stripped
+
+async def fetch_supremevalues(item_name: str) -> dict | None:
+    """supremevalues.com'dan eşya değerini çeker. {name, value, source} döner veya None."""
+    try:
+        url = f"https://www.supremevalues.com/items/{urllib.parse.quote(item_name.replace(' ', '-').lower())}"
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; MM2Bot/1.0)"}
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    # API endpoint dene
+                    api_url = "https://www.supremevalues.com/api/items"
+                    async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=10)) as r2:
+                        if r2.status != 200:
+                            return None
+                        data = await r2.json()
+                    items = data if isinstance(data, list) else data.get("items", [])
+                    q_l = item_name.lower()
+                    for it in items:
+                        n = (it.get("name") or it.get("item") or "").lower()
+                        if n == q_l:
+                            val = it.get("value") or it.get("val")
+                            if val is not None:
+                                return {"name": it.get("name", item_name), "value": str(val), "source": "supremevalues.com"}
+                    return None
+                html = await resp.text()
+        soup = BeautifulSoup(html, "html.parser")
+        # Değer bilgisini bul
+        for tag in soup.find_all(["span", "div", "p", "h3", "strong"]):
+            txt = tag.get_text(strip=True)
+            m = re.search(r"value[:\s]*([0-9,]+(?:\.[0-9]+)?)", txt, re.I)
+            if m:
+                return {"name": item_name, "value": m.group(1), "source": "supremevalues.com"}
+        return None
+    except Exception as ex:
+        logger.error(f"supremevalues error ({item_name}): {ex}")
+        return None
+
+async def search_supremevalues_all(term: str) -> list:
+    """supremevalues.com arama API'sine term gönderir."""
+    try:
+        url = f"https://www.supremevalues.com/api/search?q={urllib.parse.quote(term)}"
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; MM2Bot/1.0)"}
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+        items = data if isinstance(data, list) else data.get("items", data.get("results", []))
+        results = []
+        for it in items:
+            name = (it.get("name") or it.get("item") or "").strip()
+            val  = it.get("value") or it.get("val")
+            if name and val is not None:
+                results.append({"name": name, "value": str(val), "source": "supremevalues.com"})
+        return results
+    except Exception:
+        return []
 
 async def search_mm2values(term: str) -> list:
     url = f"https://mm2values.com/search2.php?term={urllib.parse.quote(term)}"
@@ -586,6 +656,9 @@ async def gunluk_guncelleme():
             eski = {row[0].lower(): {"deger": row[1], "kaynak": row[2]} async for row in cur}
 
         for key, item in all_items.items():
+            # Tek/çift harfli item isimleri karışıklık yaratır — raporda gösterme
+            if len(item["name"].strip()) < 3:
+                continue
             new_val = item["value"]
             src     = item.get("source", "mm2values.com")
             checker = checker_yeni.get(key, {})
@@ -610,6 +683,9 @@ async def gunluk_guncelleme():
                         sahipler = [r[0] async for r in c2]
                     for uid in sahipler:
                         try:
+                            # Kullanıcı tercihini kontrol et
+                            if not await _tercih_al(uid, "envanter_bildirimi", 1):
+                                continue
                             u = await bot.fetch_user(uid)
                             dm_em = discord.Embed(
                                 title="Eşya Değeri Değişti",
@@ -690,6 +766,25 @@ async def _bot_ayar_kaydet(anahtar: str, deger: str):
 async def _bot_ayar_sil(anahtar: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM bot_ayarlari WHERE anahtar = ?", (anahtar,))
+        await db.commit()
+
+# ─── KULLANICI TERCİHLERİ ─────────────────────────────────────────────────────
+async def _tercih_al(user_id: int, anahtar: str, varsayilan: int = 1) -> int:
+    """Kullanıcı tercihini döndürür. Kayıt yoksa varsayılan değer (1=açık) döner."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT deger FROM kullanici_tercihler WHERE discord_id = ? AND anahtar = ?",
+            (user_id, anahtar)
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row else varsayilan
+
+async def _tercih_kaydet(user_id: int, anahtar: str, deger: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO kullanici_tercihler (discord_id, anahtar, deger) VALUES (?, ?, ?)",
+            (user_id, anahtar, deger)
+        )
         await db.commit()
 
 # ─── EVENTS ───────────────────────────────────────────────────────────────────
@@ -977,12 +1072,19 @@ async def _doviz_cek() -> str | None:
         return None
 
 # ── Akıllı web arama filtresi ────────────────────────────────────────────────
-def _akilli_filtrele(sonuclar: list[dict], bugun_tr: str) -> str:
-    """Sonuçları puanlar: bugünün tarihini / sayısal değerleri / güncel kelimeleri içerenler öne çıkar."""
+def _akilli_filtrele(sonuclar: list[dict], bugun_tr: str, sorgu: str = "") -> str:
+    """Sonuçları puanlar; spor sorgusunda siyasi/ekonomi içerik cezalandırılır."""
     SAYI_RE   = re.compile(r'\d[\d.,]+')
-    SPOR_RE   = re.compile(r'(skor|gol|maç|kazandı|yendi|berabere|puan|goller|final|lig|şampiyon)', re.I)
+    SPOR_RE   = re.compile(r'(skor|gol|maç|kazandı|yendi|berabere|puan|goller|final|lig|şampiyon|futbol|basket|tenis)', re.I)
     PARA_RE   = re.compile(r'(tl|₺|\$|dolar|euro|€|kur|fiyat|başlangıç)', re.I)
     GUNCEL_RE = re.compile(r'(2025|2026|bugün|today|son dakika|güncel|canlı|anlık|şu an|dün)', re.I)
+    SIYASI_RE = re.compile(r'(seçim|hükümet|meclis|iktidar|muhalefet|cumhurbaşkanı|siyasi parti|ekonomi politika|bütçe|enflasyon)', re.I)
+
+    sorgu_l  = sorgu.lower()
+    spor_sorgu = any(w in sorgu_l for w in (
+        "maç", "skor", "gol", "futbol", "takım", "lig", "şampiyon", "basket", "tenis",
+        "match", "score", "goal", "champion", "league"
+    ))
 
     puanli = []
     for s in sonuclar:
@@ -990,14 +1092,19 @@ def _akilli_filtrele(sonuclar: list[dict], bugun_tr: str) -> str:
         govde  = s.get("body", "")
         metin  = f"{baslik}: {govde}"
         puan   = 0
-        if bugun_tr in metin:          puan += 8   # Bugünün tarihi → en yüksek öncelik
+        if bugun_tr in metin:          puan += 8
         if GUNCEL_RE.search(metin):    puan += 4
         if SPOR_RE.search(metin):      puan += 3
         if SAYI_RE.search(metin):      puan += 2
         if PARA_RE.search(metin):      puan += 2
+        # Spor sorgusu ama içerik tamamen siyasi/ekonomi → ceza
+        if spor_sorgu and SIYASI_RE.search(metin) and not SPOR_RE.search(metin):
+            puan -= 5
         puanli.append((puan, metin))
 
     puanli.sort(key=lambda x: x[0], reverse=True)
+    # Puan -5'ten düşük olanları (tamamen alakasız) çıkar
+    puanli = [(p, m) for p, m in puanli if p > -3]
     return "\n".join(f"• {m}" for _, m in puanli)
 
 # ── Web araması (duckduckgo_search, thread pool) ────────────────────────────
@@ -1014,7 +1121,7 @@ async def _web_ara(sorgu: str, max_sonuc: int = 15, bugun_tr: str = "") -> str:
                     sonuclar += list(d.text(sorgu, max_results=max_sonuc, region="wt-wt"))
             if not sonuclar:
                 return "Arama sonucu bulunamadı."
-            return _akilli_filtrele(sonuclar, bugun_tr)
+            return _akilli_filtrele(sonuclar, bugun_tr, sorgu)
         except Exception as ex:
             return f"Arama başarısız: {ex}"
     loop = asyncio.get_event_loop()
@@ -1360,16 +1467,20 @@ async def handle_ai_message(message: discord.Message):
             await message.reply(mesaj)
         except Exception:
             pass
-        # Bot sahibine DM bildirimi
+        # AI hata kanalına bildirim
         try:
-            owner = await bot.fetch_user(OWNER_ID)
-            await owner.send(
-                f"⚠️ **AI Hatası**\n"
-                f"Tüm sağlayıcılar başarısız oldu.\n"
-                f"**Hata:** `{type(son_hata).__name__}: {str(son_hata)[:200]}`\n"
-                f"**Sunucu:** {message.guild.name if message.guild else 'DM'}\n"
-                f"**Zaman:** <t:{int(__import__('time').time())}:R>"
-            )
+            hata_ch = bot.get_channel(LOG_MODAL_CHANNEL)
+            if hata_ch:
+                hata_em = discord.Embed(
+                    title="⚠️ AI Hatası — Tüm Sağlayıcılar Başarısız",
+                    color=discord.Color.red(),
+                    timestamp=datetime.datetime.utcnow()
+                )
+                hata_em.add_field(name="Hata", value=f"`{type(son_hata).__name__}: {str(son_hata)[:300]}`", inline=False)
+                hata_em.add_field(name="Sunucu", value=message.guild.name if message.guild else "DM", inline=True)
+                hata_em.add_field(name="Kullanıcı", value=f"{message.author.mention}", inline=True)
+                hata_em.add_field(name="Zaman", value=f"<t:{int(__import__('time').time())}:R>", inline=True)
+                await hata_ch.send(embed=hata_em)
         except Exception:
             pass
 
@@ -1824,6 +1935,54 @@ def _build_deger_embed(search_term: str, best_values: dict | None,
     if best_checker: sources.append("mm2checker.com")
     embed.set_footer(text=f"{'&'.join(sources)} | {search_term[:80]}")
     return embed
+
+# ─── TERCİHLER VIEW ───────────────────────────────────────────────────────────
+TERCIH_LISTESI = [
+    ("ozel_mesaj_dm",      "📨 Özel Mesaj Bildirimleri",       "Bot üzerinden gönderilen toplu DM'leri al"),
+    ("envanter_bildirimi", "📦 Envanter Değer Bildirimleri",   "Envanterindeki eşyanın değeri değişince DM al"),
+]
+
+class TercihlerView(discord.ui.View):
+    def __init__(self, user_id: int, tercihler: dict):
+        super().__init__(timeout=120)
+        self.user_id   = user_id
+        self.tercihler = tercihler
+
+    def _embed(self) -> discord.Embed:
+        em = discord.Embed(
+            title="⚙️ Tercihlerim",
+            description="Aşağıdaki butonlarla tercihlerini açıp kapatabilirsin.",
+            color=discord.Color.blurple()
+        )
+        for anahtar, ad, aciklama in TERCIH_LISTESI:
+            durum = "✅ Açık" if self.tercihler.get(anahtar, 1) else "❌ Kapalı"
+            em.add_field(name=ad, value=f"{durum}\n*{aciklama}*", inline=False)
+        em.set_footer(text="Değişiklikler anında kaydedilir.")
+        return em
+
+    @discord.ui.button(label="📨 Özel Mesaj", style=discord.ButtonStyle.secondary)
+    async def toggle_ozel_mesaj(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Sadece kendi tercihlerini değiştirebilirsin.", ephemeral=True)
+        mevcut = self.tercihler.get("ozel_mesaj_dm", 1)
+        yeni   = 0 if mevcut else 1
+        self.tercihler["ozel_mesaj_dm"] = yeni
+        await _tercih_kaydet(self.user_id, "ozel_mesaj_dm", yeni)
+        button.style = discord.ButtonStyle.success if yeni else discord.ButtonStyle.secondary
+        button.label = f"📨 Özel Mesaj — {'✅' if yeni else '❌'}"
+        await interaction.response.edit_message(embed=self._embed(), view=self)
+
+    @discord.ui.button(label="📦 Envanter Bildirimi", style=discord.ButtonStyle.secondary)
+    async def toggle_envanter(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Sadece kendi tercihlerini değiştirebilirsin.", ephemeral=True)
+        mevcut = self.tercihler.get("envanter_bildirimi", 1)
+        yeni   = 0 if mevcut else 1
+        self.tercihler["envanter_bildirimi"] = yeni
+        await _tercih_kaydet(self.user_id, "envanter_bildirimi", yeni)
+        button.style = discord.ButtonStyle.success if yeni else discord.ButtonStyle.secondary
+        button.label = f"📦 Envanter Bildirimi — {'✅' if yeni else '❌'}"
+        await interaction.response.edit_message(embed=self._embed(), view=self)
 
 # ─── SLASH KOMUTLARI ──────────────────────────────────────────────────────────
 
@@ -2405,20 +2564,30 @@ async def ozel_mesaj(
         return await interaction.followup.send(
             "❌ **Genel** kapsam yalnızca bot sahibi tarafından kullanılabilir.", ephemeral=True)
 
+    bot_avatar = bot.user.display_avatar.url if bot.user else None
     embed = discord.Embed(
         title=f"📩 {interaction.guild.name if interaction.guild else 'Mesaj'}",
         description=f">>> {mesaj}",
         color=0x5865F2, timestamp=datetime.datetime.utcnow())
-    if interaction.guild:
+
+    if kapsam_val == "genel":
+        # Genel modda: bot profil resmi, hangi sunucudan gönderildiği
+        sunucu_adi = interaction.guild.name if interaction.guild else "Bot"
+        embed.set_author(name=bot.user.name if bot.user else "Bot", icon_url=bot_avatar)
+        embed.set_thumbnail(url=bot_avatar)
+        embed.set_footer(text=f"Gönderildiği sunucu: {sunucu_adi}")
+    elif interaction.guild:
         icon_url = interaction.guild.icon.url if interaction.guild.icon else None
         embed.set_author(name=interaction.guild.name, icon_url=icon_url)
         if interaction.guild.icon:
             embed.set_thumbnail(url=interaction.guild.icon.url)
-    if not gizli_gonder:
-        embed.set_footer(text=f"Gönderen: {interaction.user.display_name}",
-                         icon_url=interaction.user.display_avatar.url)
+        if not gizli_gonder:
+            embed.set_footer(text=f"Gönderen: {interaction.user.display_name}",
+                             icon_url=interaction.user.display_avatar.url)
+        else:
+            embed.set_footer(text="Resmi Sunucu Mesajı")
     else:
-        embed.set_footer(text="Resmi Sunucu Mesajı")
+        embed.set_footer(text="Resmi Mesaj")
 
     hedefler: list[discord.Member] = []
     if hedef_kullanici:
@@ -2439,6 +2608,9 @@ async def ozel_mesaj(
     gonderilen = 0
     for member in hedefler:
         try:
+            # Kullanıcının özel mesaj tercihini kontrol et
+            if not await _tercih_al(member.id, "ozel_mesaj_dm", 1):
+                continue
             await member.send(embed=embed)
             gonderilen += 1
             await asyncio.sleep(0.3)
@@ -2692,6 +2864,45 @@ async def durum_dongu(
     embed.set_footer(text="Durdurmak için /durum → Temizle (varsayılan)")
     stats_add(interaction)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# /ai-sıfırla
+@tree.command(name="ai-sıfırla", description="Kendi AI sohbet geçmişini ve stil tercihini sıfırlar.")
+async def ai_sifirla(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await log_usage(interaction, "ai-sıfırla")
+    guild_id = interaction.guild_id or 0
+    user_id  = interaction.user.id
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM ai_hafiza WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id)
+        )
+        await db.execute(
+            "DELETE FROM ai_kullanici_stil WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id)
+        )
+        await db.commit()
+    stats_add(interaction)
+    em = discord.Embed(
+        title="🔄 AI Sıfırlandı",
+        description="Sohbet geçmişin ve stil tercihin temizlendi. Artık yeni bir sohbet gibi başlayacak.",
+        color=discord.Color.green()
+    )
+    await interaction.followup.send(embed=em, ephemeral=True)
+
+# /tercihler
+@tree.command(name="tercihler", description="Kişisel bildirim tercihlerini yönetir.")
+async def tercihler(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await log_usage(interaction, "tercihler")
+    user_id = interaction.user.id
+    mevcut: dict[str, int] = {}
+    for anahtar, _, _ in TERCIH_LISTESI:
+        mevcut[anahtar] = await _tercih_al(user_id, anahtar, 1)
+    view  = TercihlerView(user_id, mevcut)
+    embed = view._embed()
+    stats_add(interaction)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 # ─── KEEP-ALIVE (botu canlı tutar) ───────────────────────────────────────────
 from aiohttp import web as _aio_web
