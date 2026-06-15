@@ -1366,13 +1366,13 @@ async def handle_ai_message(message: discord.Message):
     son_ts = _ai_son_istek.get((guild_id, user_id), 0)
     kalan = AI_COOLDOWN_SN - (simdi_ts - son_ts)
     if kalan > 0:
-        # Sessizce bekle — kullanıcıya "typing" göster, mesajı sonra işle
-        async with message.channel.typing():
-            await asyncio.sleep(kalan)
-        # Bekleme bitti, zaman damgasını güncelle ve devam et
-        _ai_son_istek[(guild_id, user_id)] = _time.monotonic()
-    else:
-        _ai_son_istek[(guild_id, user_id)] = simdi_ts
+        # Cooldown aktif — kullanıcıya bildir ve mesajı işleme
+        await message.reply(
+            f"{e('bekle')} **{round(kalan)} saniye** bekle, sonra tekrar yaz.",
+            delete_after=kalan,
+        )
+        return
+    _ai_son_istek[(guild_id, user_id)] = simdi_ts
 
     # ── Görsel eki var mı? ─────────────────────────────────────────────────
     gorsel_eki_url: str | None = None
