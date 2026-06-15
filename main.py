@@ -3086,6 +3086,7 @@ async def durum(interaction: discord.Interaction,
     mesajlar="Virgülle ayır: 'Mesaj1, Mesaj2, Mesaj3' (maks 5 mesaj)",
     tip="Tüm mesajların durum tipi",
     dakika="Kaç dakikada bir değişsin (min: 1, varsayılan: 5)",
+    on_ayar_emoji="Her mesajın başına eklenecek emoji ön ayarı (isteğe bağlı)",
 )
 @app_commands.choices(tip=[
     app_commands.Choice(name="🎮 Oynuyor",   value="playing"),
@@ -3093,12 +3094,38 @@ async def durum(interaction: discord.Interaction,
     app_commands.Choice(name="📺 İzliyor",   value="watching"),
     app_commands.Choice(name="🏆 Yarışıyor", value="competing"),
 ])
+@app_commands.choices(on_ayar_emoji=[
+    app_commands.Choice(name="🔍 Arama",              value="ara"),
+    app_commands.Choice(name="🔗 Bağlama / Zincir",   value="bagla"),
+    app_commands.Choice(name="📦 Envanter / Depo",    value="envanter"),
+    app_commands.Choice(name="✅ Onay",                value="onay"),
+    app_commands.Choice(name="❌ Hata",                value="hata"),
+    app_commands.Choice(name="👤 Kullanıcı",           value="kullanici"),
+    app_commands.Choice(name="📢 Duyuru",              value="duyuru"),
+    app_commands.Choice(name="📊 İstatistik",          value="istatistik"),
+    app_commands.Choice(name="🔄 Güncelleme / Yükleme",value="guncelle"),
+    app_commands.Choice(name="💎 Elmas / MM2 Eşya",   value="elmas"),
+    app_commands.Choice(name="🌐 Sunucu / Veritabanı", value="sunucu"),
+    app_commands.Choice(name="⏳ Bekleme / Yükleniyor",value="bekle"),
+    app_commands.Choice(name="📋 Liste / Pano",        value="liste"),
+    app_commands.Choice(name="➕ Ekle",                value="ekle"),
+    app_commands.Choice(name="⚙️ Ayarlar",             value="ayarlar"),
+    app_commands.Choice(name="📨 Mesaj / DM",          value="mesaj"),
+    app_commands.Choice(name="🛡️ Güvenlik / Kalkan",   value="kalkan"),
+    app_commands.Choice(name="📅 Takvim",              value="takvim"),
+    app_commands.Choice(name="🔒 Kilit / Kalkan 2",    value="kilit"),
+    app_commands.Choice(name="⭐ Favori / Yıldız",     value="yildiz"),
+    app_commands.Choice(name="🎮 Roblox Logo",         value="roblox"),
+    app_commands.Choice(name="ℹ️ Bilgi",               value="bilgi"),
+    app_commands.Choice(name="🤖 Robot / Bot",         value="robot"),
+])
 @app_commands.default_permissions(administrator=True)
 async def durum_dongu(
     interaction: discord.Interaction,
     tip: app_commands.Choice[str],
     mesajlar: str,
     dakika: int = 5,
+    on_ayar_emoji: app_commands.Choice[str] | None = None,
 ):
     global _dongu_mesajlar, _dongu_index, _dongu_task
     if interaction.user.id != OWNER_ID:
@@ -3112,6 +3139,12 @@ async def durum_dongu(
     if not parcalar:
         return await interaction.response.send_message(
             "❌ En az bir mesaj girilmeli.", ephemeral=True)
+
+    # Seçilen ön ayar emojisini her mesajın başına ekle
+    emoji_prefix = ""
+    if on_ayar_emoji:
+        emoji_prefix = e(on_ayar_emoji.value) + " "
+    parcalar = [f"{emoji_prefix}{p}" for p in parcalar]
 
     _durum_dongu_durdur()
 
@@ -3133,10 +3166,13 @@ async def durum_dongu(
         slot_tip = tip_adlar.get(slot["tip"], slot["tip"])
         liste_satirlari.append(f"`{i+1}.` {slot['metin']} [{slot_tip}]{etiket}")
     liste = "\n".join(liste_satirlari)
+
+    emoji_aciklama = f"\n**Emoji Ön Ayarı:** `{on_ayar_emoji.name}`" if on_ayar_emoji else ""
     embed = discord.Embed(
-        title="🔄 Dönen Durum Aktif",
+        title=f"{e('guncelle')} Dönen Durum Aktif",
         description=(
-            f"**Aralık:** Her {dakika} dakikada bir\n\n"
+            f"**Aralık:** Her {dakika} dakikada bir"
+            f"{emoji_aciklama}\n\n"
             f"**Mesajlar:**\n{liste}"
         ),
         color=discord.Color.blurple()
