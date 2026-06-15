@@ -190,7 +190,20 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-bot  = commands.Bot(command_prefix="!", intents=intents)
+class MmCommandTree(app_commands.CommandTree):
+    """Yapay zeka kanalında slash komutlarını engeller."""
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.guild and interaction.channel_id:
+            ai_ch_id = await get_ai_kanal(interaction.guild_id)
+            if ai_ch_id and interaction.channel_id == ai_ch_id:
+                await interaction.response.send_message(
+                    "❌ Bu kanal yapay zeka sohbet kanalıdır, komutlar burada kullanılamaz.",
+                    ephemeral=True,
+                )
+                return False
+        return True
+
+bot  = commands.Bot(command_prefix="!", intents=intents, tree_cls=MmCommandTree)
 tree = bot.tree
 
 # ─── DATABASE ─────────────────────────────────────────────────────────────────
