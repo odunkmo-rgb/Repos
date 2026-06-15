@@ -3173,9 +3173,10 @@ async def durum_dongu(
             "❌ En az bir mesaj girilmeli.", ephemeral=True)
 
     # Seçilen ön ayar emojisini her mesajın başına ekle
+    # Activity metni custom emoji markdown render etmez — Unicode fallback kullan
     emoji_prefix = ""
     if on_ayar_emoji:
-        emoji_prefix = e(on_ayar_emoji.value) + " "
+        emoji_prefix = eu(on_ayar_emoji.value) + " "
     parcalar = [f"{emoji_prefix}{p}" for p in parcalar]
 
     _durum_dongu_durdur()
