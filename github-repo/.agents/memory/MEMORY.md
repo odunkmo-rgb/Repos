@@ -1,0 +1,2 @@
+- [GitHub Python bot çalıştırma](github-python-runtime.md) — GitHub’dan aktarılan Python botlarında `.venv` yoksa çalışma akışı doğrudan proje Python’ını kullanmalı.
+- [Bot verisi ve Top.gg](bot-persistence-and-voting.md) — Discord ID’leri PostgreSQL’de BIGINT olmalı; oy kapısı token/API hatasında izin vermemeli.
