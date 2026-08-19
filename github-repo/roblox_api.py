@@ -1,4 +1,5 @@
 import aiohttp
+from urllib.parse import urlencode
 
 ROBLOX_API = "https://api.roblox.com"
 USERS_API = "https://users.roblox.com"
@@ -67,7 +68,7 @@ async def get_avatar_url(roblox_id: str) -> str:
 async def search_users(keyword: str) -> list:
     async with aiohttp.ClientSession() as session:
         try:
-            url = f"{USERS_API}/v1/users/search?keyword={keyword}&limit=5"
+            url = f"{USERS_API}/v1/users/search?{urlencode({'keyword': keyword, 'limit': 5})}"
             async with session.get(url) as resp:
                 if resp.status != 200:
                     return []

@@ -41,6 +41,7 @@ _TABLE_PK: dict[str, list[str]] = {
     "degerler_cache":      ["esya_adi"],
     "bot_ayarlari":        ["anahtar"],
     "kullanici_tercihler": ["discord_id", "anahtar"],
+    "ai_kullanici_dil":    ["user_id"],
     "ai_kullanici_stil":   ["guild_id", "user_id"],
     "ai_hafiza":           ["guild_id", "user_id"],
     "envanter":            [],          # uses BIGSERIAL id, no upsert needed
