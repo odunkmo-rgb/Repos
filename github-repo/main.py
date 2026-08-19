@@ -398,7 +398,8 @@ async def init_db():
                 guild_id BIGINT PRIMARY KEY,
                 log_channel_id BIGINT,
                 yetkili_rol_id TEXT,
-                ai_channel_id BIGINT
+                ai_channel_id BIGINT,
+                sunucu_dil TEXT
             );
             CREATE TABLE IF NOT EXISTS roblox_bagla (
                 discord_id BIGINT PRIMARY KEY,
@@ -486,19 +487,30 @@ async def init_db():
         """)
         await db.commit()
 
-        for migration in [
-            "ALTER TABLE roblox_bagla ADD COLUMN roblox_display_name TEXT",
-            "ALTER TABLE settings ADD COLUMN ai_channel_id INTEGER",
-            "ALTER TABLE degerler_cache ADD COLUMN gorsel_url TEXT",
-            "ALTER TABLE degerler_cache ADD COLUMN kaynak TEXT",
-            "ALTER TABLE settings ADD COLUMN yetkili_rol_id TEXT",
-            "ALTER TABLE settings ADD COLUMN sunucu_dil TEXT",
-        ]:
-            try:
-                await db.execute(migration)
+        migrations = [
+            ("roblox_bagla", "roblox_display_name", "TEXT"),
+            ("settings", "ai_channel_id", "BIGINT"),
+            ("degerler_cache", "gorsel_url", "TEXT"),
+            ("degerler_cache", "kaynak", "TEXT"),
+            ("settings", "yetkili_rol_id", "TEXT"),
+            ("settings", "sunucu_dil", "TEXT"),
+        ]
+        for table, column, definition in migrations:
+            if os.environ.get("BOT_DATABASE_URL") or os.environ.get("DATABASE_URL"):
+                async with db.execute(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = ? AND column_name = ?",
+                    (table, column),
+                ) as cur:
+                    exists = await cur.fetchone()
+            else:
+                async with db.execute(f"PRAGMA table_info({table})") as cur:
+                    exists = any(row[1] == column for row in await cur.fetchall())
+            if not exists:
+                await db.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                )
                 await db.commit()
-            except Exception:
-                pass
 
 async def log_usage(interaction: discord.Interaction, komut: str):
     async with db_connect() as db:
@@ -1125,32 +1137,40 @@ async def _find_announcement_channel(
     }
     for channel in guild.text_channels:
         name = channel.name.casefold().replace(" ", "-")
-        if name in ANNOUNCEMENT_CHANNEL_NAMES:
+        if (
+            name in ANNOUNCEMENT_CHANNEL_NAMES
+            or "bot-komut" in name
+            or "bot-command" in name
+            or "slashcommand" in name
+        ):
             return channel
     # Do not fall back to a general channel: maintenance notices belong only
     # in an explicitly identifiable commands channel.
     if normalized:
         logger.warning(
-            f"Duyuru kanalı bulunamadı: {guild.name} ({target_id}). "
+            f"Duyuru kanalı bulunamadı: {guild.name} ({guild.id}). "
             f"Mevcut kanallar: {', '.join(sorted(normalized)[:20])}"
         )
     return None
 
 
-async def _announcement_channels() -> list[discord.TextChannel]:
+async def _announcement_channels(
+    include_exact: bool = True,
+) -> list[discord.TextChannel]:
     """Return the exact configured channel plus named command channels elsewhere."""
     channels: list[discord.TextChannel] = []
-    exact = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
-    if (
-        isinstance(exact, discord.TextChannel)
-        and exact.guild.id == ANNOUNCEMENT_GUILD_ID
-    ):
-        channels.append(exact)
-    else:
-        logger.warning(
-            "Kesin bakım kanalı bulunamadı veya yanlış sunucuda: "
-            f"{ANNOUNCEMENT_CHANNEL_ID}"
-        )
+    if include_exact:
+        exact = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+        if (
+            isinstance(exact, discord.TextChannel)
+            and exact.guild.id == ANNOUNCEMENT_GUILD_ID
+        ):
+            channels.append(exact)
+        else:
+            logger.warning(
+                "Kesin bakım kanalı bulunamadı veya yanlış sunucuda: "
+                f"{ANNOUNCEMENT_CHANNEL_ID}"
+            )
 
     for guild in bot.guilds:
         if guild.id == ANNOUNCEMENT_GUILD_ID:
@@ -1171,12 +1191,20 @@ async def send_maintenance_notice_once():
         if _maintenance_notice_sent:
             return
         setting_key = f"maintenance_notice:{MAINTENANCE_NOTICE_VERSION}"
-        if await _bot_ayar_al(setting_key):
+        general_sent = bool(await _bot_ayar_al(setting_key))
+        other_setting_key = f"maintenance_notice_other:{MAINTENANCE_NOTICE_VERSION}"
+        other_sent = bool(await _bot_ayar_al(other_setting_key))
+        if general_sent and other_sent:
             _maintenance_notice_sent = True
             return
 
         sent = 0
-        channels = await _announcement_channels()
+        if general_sent:
+            channels = await _announcement_channels(include_exact=False)
+            current_key = other_setting_key
+        else:
+            channels = await _announcement_channels()
+            current_key = setting_key
         for channel in channels:
             try:
                 await channel.send(MAINTENANCE_NOTICE)
@@ -1187,8 +1215,8 @@ async def send_maintenance_notice_once():
                 logger.warning(f"Duyuru gönderilemedi ({channel.id}): {ex}")
 
         if sent:
-            await _bot_ayar_kaydet(setting_key, str(datetime.datetime.utcnow()))
-            _maintenance_notice_sent = True
+            await _bot_ayar_kaydet(current_key, str(datetime.datetime.utcnow()))
+            _maintenance_notice_sent = general_sent or current_key == setting_key
             logger.info(f"Çift dilli bakım duyurusu gönderildi: {sent} kanal")
 
 # ─── AI DİL TERCİHİ ──────────────────────────────────────────────────────────
