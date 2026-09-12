@@ -1287,22 +1287,42 @@ async def _gunluk_kullanim_ekle(user_id: int) -> int:
     return row[0] if row else 1
 
 async def _topgg_oy_kontrol(user_id: int) -> bool:
-    """Kullanıcının bugün Top.gg'de oy verip vermediğini kontrol eder.
-    Token veya API yoksa güvenli tarafta kalıp False döndürür."""
+    """Return whether the user has an active Top.gg vote.
+
+    Prefer the current v1 endpoint and keep the legacy v0 endpoint as a
+    fallback for older tokens. An active v1 response is HTTP 200; expired or
+    missing votes are HTTP 404.
+    """
     if not TOPGG_TOKEN or not bot.user:
         return False
-    bot_id = bot.user.id
-    url = f"https://top.gg/api/bots/{bot_id}/check?userId={user_id}"
+
+    v1_url = f"https://top.gg/api/v1/projects/@me/votes/{user_id}?source=discord"
+    v0_url = f"https://top.gg/api/bots/{bot.user.id}/check?userId={user_id}"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                url,
+                v1_url,
+                headers={"Authorization": f"Bearer {TOPGG_TOKEN}"},
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status == 200:
+                    return True
+                if resp.status == 404:
+                    return False
+                if resp.status != 401:
+                    logger.warning(f"Top.gg v1 oy kontrolü HTTP {resp.status}")
+                    return False
+
+            # Compatibility with legacy v0 tokens.
+            async with session.get(
+                v0_url,
                 headers={"Authorization": TOPGG_TOKEN},
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     return bool(data.get("voted", 0))
+                logger.warning(f"Top.gg v0 oy kontrolü HTTP {resp.status}")
     except Exception as ex:
         logger.warning(f"Top.gg oy kontrol hatası: {ex}")
     return False
