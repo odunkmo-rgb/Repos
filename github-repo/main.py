@@ -383,7 +383,7 @@ class MmCommandTree(app_commands.CommandTree):
                 )
                 return False
         cmd_name = (interaction.data or {}).get("name", "")
-        if cmd_name not in self._TOPGG_UCRETS and not await _topgg_kapi(interaction):
+        if cmd_name not in self._TOPGG_UCRETSIZ and not await _topgg_kapi(interaction):
             return False
         return True
 
@@ -1441,7 +1441,6 @@ async def setup_hook():
 @bot.event
 async def on_ready():
     await set_default_status()
-    await send_maintenance_notice_once()
     logger.info(f"Bot hazır: {bot.user} | {len(bot.guilds)} sunucu")
 
 class GuildJoinDilSelect(discord.ui.Select):
