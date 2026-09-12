@@ -3859,9 +3859,10 @@ async def _keepalive_server():
     app.router.add_get("/ping", _handle)
     runner = _aio_web.AppRunner(app)
     await runner.setup()
-    site = _aio_web.TCPSite(runner, "0.0.0.0", 8090)
+    port = int(os.environ.get("PORT", "8090"))
+    site = _aio_web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logger.info("Keep-alive sunucusu başladı: port 8090")
+    logger.info(f"Keep-alive sunucusu başladı: port {port}")
 
 async def _self_ping_loop():
     """Her 7 dakikada bir kendi /ping adresine istek atar — Replit uyumasın."""
