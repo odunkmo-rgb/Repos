@@ -1417,30 +1417,37 @@ async def setup_hook():
     synced = await tree.sync()
     logger.info(f"Global slash komutları senkronize edildi: {len(synced)} komut")
 
-    # Older versions copied every global command into each guild as well.
-    # Remove those stale guild-scoped copies once, otherwise Discord displays
-    # both the global and guild command with the same name.
-    cleanup_key = "slash_guild_commands_cleanup:v1"
-    if not await _bot_ayar_al(cleanup_key):
-        cleanup_ok = True
-        for guild in bot.guilds:
-            try:
-                tree.clear_commands(guild=guild)
-                await tree.sync(guild=guild)
-            except discord.HTTPException as ex:
-                cleanup_ok = False
-                logger.warning(f"Eski sunucu komutları temizlenemedi ({guild.id}): {ex}")
-        if cleanup_ok:
-            await _bot_ayar_kaydet(cleanup_key, str(datetime.datetime.utcnow()))
-
     if not gunluk_guncelleme.is_running():
         gunluk_guncelleme.start()
     asyncio.create_task(fetch_mm2checker())
 
 
+async def _cleanup_stale_guild_commands_once():
+    """Remove old guild-scoped copies after the guild cache is ready."""
+    cleanup_key = "slash_guild_commands_cleanup:v2"
+    if await _bot_ayar_al(cleanup_key):
+        return
+
+    cleanup_ok = True
+    for guild in bot.guilds:
+        try:
+            tree.clear_commands(guild=guild)
+            await tree.sync(guild=guild)
+        except discord.HTTPException as ex:
+            cleanup_ok = False
+            logger.warning(f"Eski sunucu komutları temizlenemedi ({guild.id}): {ex}")
+
+    if cleanup_ok:
+        await _bot_ayar_kaydet(cleanup_key, str(datetime.datetime.utcnow()))
+        logger.info(
+            f"Eski sunucu slash komutları temizlendi: {len(bot.guilds)} sunucu"
+        )
+
+
 @bot.event
 async def on_ready():
     await set_default_status()
+    await _cleanup_stale_guild_commands_once()
     logger.info(f"Bot hazır: {bot.user} | {len(bot.guilds)} sunucu")
 
 class GuildJoinDilSelect(discord.ui.Select):
